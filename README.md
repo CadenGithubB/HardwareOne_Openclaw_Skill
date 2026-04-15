@@ -16,7 +16,7 @@ Interfaces with HardwareOne ESP32-based IoT devices for:
 1. **Clone to your OpenClaw skills directory:**
    ```bash
    cd ~/.openclaw/workspace/skills
-   git clone https://github.com/YOUR_USERNAME/HardwareOne-Openclaw-Skill.git hardwareone
+   git clone https://github.com/CadenGithubB/HardwareOne-Openclaw-Skill.git hardwareone
    ```
    Or copy manually:
    ```bash
@@ -170,7 +170,7 @@ git pull
 
 ## Credits
 
-- Based on [HardwareOne](https://github.com/YOUR_USERNAME/hardwareone-idf) ESP32 firmware
+- Based on [HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 firmware
 - Integrated with the [OpenClaw](https://github.com/openclaw/openclaw) skill system
 
 ## License
