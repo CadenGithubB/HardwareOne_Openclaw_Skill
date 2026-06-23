@@ -2,46 +2,48 @@
 
 **This is a custom embedded CLI on an ESP32 microcontroller, NOT a Linux/Unix shell.**
 Standard commands like `ls`, `cd`, `cat`, `dir`, `ps`, `rm`, `cp`, `mv`, `df`, `mount`, `grep`, `find`, `echo`, `sysinfo`, `ifconfig`, `ping` DO NOT EXIST.
-Every valid command is listed below. If a command is not in this file, it does not exist on this device.
+The complete, always-current command list is in `{baseDir}/references/cli-commands.generated.md` (auto-generated from firmware). The sections in *this* file are a curated guide to the most-used commands plus the HTTP API, feature model, and error handling — consult the generated catalog for exhaustive coverage. If a command is in neither file, it does not exist on this device.
 
 ## Quick Index — every command grouped by module
 
-**System:** status, uptime, time, timeset(admin), reboot(admin), temperature, voltage, cpufreq(admin), memsample, memreport, taskstats, broadcast(admin), wait, lightsleep(admin), fsusage
+<!-- This index is a derived summary of the "CLI Command Reference" section below, which is the canonical source. Keep the two in sync; if they ever disagree, the detailed reference wins. -->
+
+**System:** status, uptime, time, timeset(admin), reboot(admin), temperature, voltage, cpufreq(admin), memsample, memreport, taskstats, broadcast(admin), wait, lightsleep(admin)
 **WiFi:** openwifi, closewifi, wifistatus, wifiscan, wifilist, wifiadd(admin), wifirm(admin), wifipromote(admin), ntpsync
 **HTTP Server:** openhttp, closehttp, httpstatus, certinfo, certgen(admin)
-**Filesystem:** files(admin), mkdir(admin), rmdir(admin), filecreate(admin), fileview(admin), filedelete(admin), filerename(admin)
+**Filesystem:** fsusage, files(admin), mkdir(admin), rmdir(admin), filecreate(admin), fileview(admin), filedelete(admin), filerename(admin)
 **SD Card:** sdmount, sdunmount, sdformat(admin), sdinfo, sddiag
-**Users:** login, logout, useradd(admin), userdel(admin), userlist(admin), userpromote(admin), userdemote(admin), sessionlist(admin), pendinglist(admin)
+**Users:** login, logout, userlist(admin), useradd(admin), userdelete(admin), userchangepassword, userresetpassword(admin), userpromote(admin), userdemote(admin), userrequest, userapprove(admin), userdeny(admin), pendinglist(admin), usersync(admin), sessionlist(admin), sessionrevoke(admin), serialrequireauth(admin), ban(admin), unban(admin), banlist(admin), banuser(admin), unbanuser(admin)
 **Sensors — pattern:** open<sensor>, <sensor>read, close<sensor>, <sensor>autostart
 **Thermal:** openthermal, closethermal, thermalread, thermalautostart, thermaldiag, thermalpollingms, thermalpalettedefault, thermalrotation, thermalinterpolationenabled, thermalinterpolationsteps, thermalupscalefactor, thermaltargetfps, thermaldevicepollms, thermaltemporalalpha, thermalewmafactor
-**IMU:** openimu, closeimu, imuread, imumode, imucalibrate, imuautostart, imupollingms, imustreamrate, imustreamduration
-**ToF:** opentof, closetof, tofread, tofautostart, tofpollingms, tofcalibrate
-**GPS:** opengps, closegps, gpsread, gpsautostart
-**APDS:** openapds, closeapds, apdscolor, apdsprox, apdsgesture
-**Presence:** openpresence, closepresence, presenceread, presenceautostart
-**RTC:** openrtc, closertc, rtcread, rtcset(admin)
-**Camera:** opencamera, closecamera, cameraread, cameracapture, cameraresolution, cameraquality, cameraeffect, cameraexposure, cameraflash
-**Microphone:** openmic, closemic, micread, miclevel, micrecord, micsamplerate
-**FM Radio:** openfm, closefm, fmread, fmseek, fmfreq, fmvolume, fmband, fmstereo
-**Servo/PWM:** openservo, closeservo, servoangle, servosweep, servolist
-**Gamepad:** opengamepad, closegamepad, gamepadread
-**OLED:** openoled, closeoled, oledwrite, oledclear, oledbright
-**I2C Bus:** i2cscan, i2cread, i2cwrite, i2cdetect, i2chealth
-**ESP-NOW:** espnowstart, espnowstop, espnowstatus, espnowpeer, espnowsend, espnowremote, espnowscan, espnowping
-**Bonding:** bondmaster, bondworker, bondstatus, bondpeer, bondkick, bondbreak
-**MQTT:** openmqtt, closemqtt, mqttstatus, mqttpublish, mqttsubscribe, mqttunsubscribe, mqttdiscover
-**Automations:** automation (subcommands: add, list, enable, disable, delete, run, status)
-**LLM:** llm (subcommands: enable, disable, prompt, status, model, config)
-**LED/NeoPixel:** ledcolor, ledeffect, ledclear, ledon, ledoff, ledbright, ledstartupeffect(admin)
-**Bluetooth:** blescan, bleconnect, bledisconnect, blestatus
-**Sensor Logging:** sensorlog (subcommands: start, stop, list, delete, config)
-**Maps:** mapload, mapsave, maplist, mapdelete, mapwaypoint, maptrack
-**Images:** imagecapture, imagelist, imagedelete, imagesend
-**Power:** batterystatus, batterycalibrate(admin)
-**Settings:** set(admin), settingslist, settingsreset(admin)
-**Debug:** debug (flag commands for all subsystems)
-**CLI Navigation:** help, back, exit, clear
+**IMU:** openimu, closeimu, imuread, imuautostart, imuactions, imupollingms, imudevicepollms, imuorientationmode, imuorientationcorrection, imupitchoffset, imurolloffset, imuyawoffset, imuewmafactor
+**ToF:** opentof, closetof, tofread, tofautostart, tofpollingms, tofdevicepollms, tofmaxdistancemm, tofstabilitythreshold
+**GPS:** opengps, closegps, gpsread, gpsautostart, gpslog
+**APDS:** openapds, closeapds, apdsread, apdsmode, apdscolor, apdsproximity, apdsgesture, apdsautostart
+**Presence:** openpresence, closepresence, presenceread, presencestatus, presenceautostart
+**RTC:** openrtc, closertc, rtcread, rtcset(admin), rtcsync, rtcautostart
+**Camera:** opencamera, closecamera, cameraread, cameracapture, camerasave, camerares, cameraquality, camerabrightness, cameracontrast, camerasaturation, cameraexposure, cameraeffect, cameraaec, cameraagc, camerahmirror, cameravflip, cameraautostart, cameraautocapture, cameraautocaptureinterval, camerasendaftercapture, cameratargetdevice, camerastoragelocation, cameratiny (+ many more — see CLI reference)
+**Microphone:** openmic, closemic, micread, miclevel, micviz, micrecord, miclist, micdelete, micsamplerate, micgain, micbitdepth, micautostart
+**FM Radio:** openfmradio, closefmradio, fmradioread, fmradiotune, fmradioseek, fmradiovolume, fmradiomute, fmradiounmute, fmradioautostart
+**Servo/PWM:** servo, pwm, servoprofile, servolist, servocalibrate
+**Input / Gamepad:** openinput, closeinput, inputautostart, inputdevicepollms, gamepadread (raw debug)
+**OLED:** openoled, closeoled, oledstatus, oledmode, oledtext, oledclear, oledbrightness, oledupdateinterval, oledbootmode, oleddefaultmode, oledenabled
+**I2C Bus:** i2cscan, i2creset, i2cpause, i2cresume, i2crecover, i2cmetrics, i2cstats, i2chealth, sensors, sensorinfo, sensorautostart, devices, discover
+**ESP-NOW:** openespnow, closeespnow, espnowstatus, espnowstats, espnowlist, espnowpair, espnowunpair, espnowsend, espnowbroadcast, espnowsendfile, espnowbrowse, espnowfetch, espnowremote (+ mesh routing, identity, streaming, security — see "ESP-NOW Mesh" below)
+**Bonding:** bondconnect, bonddisconnect, bondstatus, bondrole, bondshowcap, bondrequestcap, bondshowmanifest, bondrequestmanifest, bondshowremotemanifest, bondstream, openstream(admin), closestream
+**MQTT:** openmqtt, closemqtt, mqttstatus, mqttautostart, mqttHost, mqttPort, mqttUser, mqttPassword, mqttBaseTopic, mqttTLSMode, mqttPublish* (per-sensor toggles), mqttSubscribeTopics, mqttExternalSensors
+**Automations:** automation, automationlist, automationadd, automationrun, autolog, validate-conditions, print
+**LLM:** llmstatus, llmload, llmunload, llmmodels, llmgenerate, llmstop
+**LED/NeoPixel:** ledcolor, ledeffect, ledclear, ledbrightness, ledstartupenabled, ledstartupeffect, ledstartupcolor, ledstartupcolor2, ledstartupduration
+**Bluetooth:** openble, closeble, blestatus, bleinfo, blename, bletxpower, bledisconnect, blesend, blestream, bleautostart, blerequireauth
+**Sensor Logging:** sensorlog start, sensorlog stop, sensorlog status, sensorlog format, sensorlog maxsize, sensorlog rotations, sensorlog sensors
+**Maps:** maplist, mapload, mapunload, map, whereami, search, waypoint, gpstrack, gpslog
+**Images:** capture, images, imageview, imagedelete, imagesend
+**Power:** power, power mode, power auto, battery status, battery calibrate(admin)
+**Settings:** wifiautoreconnect, ntpserver, tzoffsetminutes, httpAutoStart, httpsEnabled, webclihistorysize, beginwrite, savesettings
+**Debug:** debug<flagname> <0|1> (see "Debug Flags" below)
 **Features:** features, featuresetup(admin)
+**CLI Navigation:** help, back, exit, clear
 
 ## Feature → Command Mapping
 
@@ -59,7 +61,7 @@ Every valid command is listed below. If a command is not in this file, it does n
 | `i2c`         | i2cscan, i2creset, i2cpause, i2cresume, i2chealth, i2cmetrics, sensors, devices, discover |
 | `thermal`     | openthermal, closethermal, thermalread, thermalautostart, thermaldiag, + all thermal* settings |
 | `tof`         | opentof, closetof, tofread, tofautostart, + all tof* settings |
-| `imu`         | openimu, closeimu, imuread, imuautostart, imucalibrate, + all imu* settings |
+| `imu`         | openimu, closeimu, imuread, imuautostart, imuactions, + all imu* settings |
 | `gps`         | opengps, closegps, gpsread, gpsautostart, gpslog |
 | `apds`        | openapds, closeapds, apdsread, apdsmode, apdscolor, apdsproximity, apdsgesture |
 | `rtc`         | openrtc, closertc, rtcread, rtcset, rtcsync |
@@ -76,7 +78,7 @@ Every valid command is listed below. If a command is not in this file, it does n
 
 ## HTTP API Endpoints
 
-Use `bash {baseDir}/scripts/hw1.sh --get <path>` for authenticated GET requests.
+Fetch these with the `hardwareone_get` tool — e.g. `hardwareone_get { "path": "/api/sensors" }`.
 
 **Note:** API endpoints for features showing `[N/C]` will return 404. Only endpoints for compiled features are registered.
 
@@ -105,7 +107,9 @@ Use `bash {baseDir}/scripts/hw1.sh --get <path>` for authenticated GET requests.
 
 ## CLI Command Reference
 
-All CLI commands are executed via `bash {baseDir}/scripts/hw1.sh "<command>"`, which POSTs to `/api/cli`.
+Run any command below via the `hardwareone_cli` tool — e.g. `hardwareone_cli { "command": "status" }`. The gateway POSTs it to `/api/cli` for you.
+
+> **For complete coverage of all ~820 commands** (with argument syntax and, for config commands, value ranges/defaults), read `{baseDir}/references/cli-commands.generated.md`; for all configurable settings, `{baseDir}/references/settings.generated.md`. Both are generated from the firmware by `tools/sync_command_reference.py`. The curated sections below cover the common commands in more depth.
 
 ### Core -- System
 
@@ -255,6 +259,7 @@ camerabrightness <-2..2>
 cameracontrast <-2..2>
 camerasaturation <-2..2>
 cameraexposure <-2..2>
+cameraeffect <0-6>              - Special effect (admin)
 cameraaec <on|off>              - Auto exposure
 cameraagc <on|off>              - Auto gain
 camerahmirror <on|off>
@@ -305,12 +310,15 @@ servolist                       - List profiles
 servocalibrate <channel>        - Calibration mode
 ```
 
-#### Gamepad (Seesaw)
+#### Input — Gamepad / ANO Encoder
+
+The `input` module is the user-facing interface for whichever input device is present (Seesaw gamepad or ANO rotary encoder). The `gamepad` module is raw debug only.
 ```
-opengamepad                     - Start gamepad
-closegamepad                    - Stop gamepad
-gamepadread                     - Read axes and buttons
-gamepadautostart [on|off]
+openinput                       - Start input device (gamepad or ANO encoder)
+closeinput                      - Stop input device
+inputautostart [on|off]         - Auto-start on boot
+inputdevicepollms <ms>          - Hardware poll interval
+gamepadread                     - Read gamepad axes/buttons (raw debug; gamepad module)
 ```
 
 #### OLED Display (SSD1306)
@@ -471,7 +479,7 @@ mqttPublishPresence [0|1]
 mqttPublishGPS [0|1]
 mqttPublishAPDS [0|1]
 mqttPublishRTC [0|1]
-mqttPublishGamepad [0|1]
+mqttPublishInput [0|1]
 mqttSubscribeTopics [topics]    - External subscriptions
 mqttExternalSensors             - External sensor data via MQTT
 ```
@@ -542,6 +550,7 @@ Generation modes: normal (natural language) or Do: (prompt ends with `Do:` token
 ```
 ledcolor <color>                - Set color (name or hex)
 ledcolor off                    - Turn off
+ledclear                        - Turn off all LEDs
 ledeffect <effect>              - Run effect
 ledbrightness <0-100>
 ledstartupenabled [0|1]
@@ -584,7 +593,6 @@ sensorlog sensors               - Loggable sensors
 ```
 capture [littlefs|sd|both]      - Capture and save image
 images [littlefs|sd]            - List saved images
-imageview <path>                - Image file info
 imagedelete <path>              - Delete image
 imagesend <device> [path]       - Send via ESP-NOW
 ```
@@ -667,9 +675,9 @@ Format: `{"success": false, "error": "<message>"}` with HTTP status codes.
 
 | Code | Meaning | Action |
 |------|---------|--------|
-| 401  | Auth required/expired | Re-authenticate and retry (hw1.sh does this automatically) |
+| 401  | Auth required/expired | Re-authenticate and retry (the gateway does this automatically) |
 | 403  | Insufficient permissions | Inform user admin access is needed |
-| 429  | Rate limited | Wait `retry_after_ms` then retry once (hw1.sh handles this) |
+| 429  | Rate limited | Wait `retry_after_ms` then retry once (the gateway handles this) |
 | 400  | Bad request | Check command syntax |
 | 404  | Not found | Resource does not exist |
 | 500  | Server error | Report to user |

@@ -1,0 +1,16 @@
+{
+  "id": "hardwareone",
+  "enabledByDefault": true,
+  "contracts": {
+    "tools": [
+      "hardwareone_ping",
+      "hardwareone_cli",
+      "hardwareone_get"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

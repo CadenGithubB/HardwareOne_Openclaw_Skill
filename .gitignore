@@ -19,3 +19,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 /tmp/*
+
+# Brought-over reference docs — operational/security notes + recovered copies; not for publishing
+openclawdocs/
+
+# Claude Code local config
+.claude/

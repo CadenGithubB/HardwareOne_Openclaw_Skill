@@ -1,6 +1,6 @@
 ---
 name: hardwareone
-description: Interface with HardwareOne ESP32 devices via HTTP/HTTPS for sensor reading, system management, ESP-NOW mesh networking, and on-device LLM control.
+description: Interface with the HardwareOne ESP32 device via three dedicated gateway tools. The tools are the only supported way to reach the device from this sandbox.
 triggers:
   - hardwareone
   - hardware one
@@ -10,86 +10,85 @@ triggers:
   - device status
   - espnow
   - mesh network
-metadata: {"clawdbot":{"requires":{"bins":["curl"]},"config":{"env":{"HW1_URL":{"description":"HardwareOne device base URL","required":true},"HW1_USER":{"description":"Device username","required":true},"HW1_PASS":{"description":"Device password","required":true}}}}}
 ---
 
 # HardwareOne
 
-ESP32-based IoT platform with 499+ CLI commands, I2C sensors, camera, microphone, ESP-NOW mesh, MQTT, automations, and on-device LLM.
+An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C sensors, camera, microphone, ESP-NOW mesh, MQTT, automations, speech recognition, on-device LLM, and more). You reach it through three dedicated tools that the OpenClaw gateway runs on your behalf. You do **not** have direct network access — the tools are the *only* supported path to the device.
 
-## IMPORTANT: How to interact with this device
+## Available tools
 
-ALWAYS use the wrapper script below. NEVER use curl directly. NEVER guess command names or API endpoints. If you do not know the exact command, read `{baseDir}/references/api-reference.md` BEFORE trying anything. NEVER fabricate or invent output — if a command returns empty or fails, say so.
+| Tool | Parameters | What it does |
+| ---- | ---------- | ------------ |
+| `hardwareone_ping` | _(none)_ | Health-check the device. Returns hostname, MAC, firmware version. |
+| `hardwareone_cli`  | `{ "command": "<cmd>" }` | Run a device CLI command — e.g. `{"command": "thermalread"}`. |
+| `hardwareone_get`  | `{ "path": "/api/..." }` | HTTP GET an API endpoint. Path must start with `/api/`. |
 
-**Run a CLI command:**
-```
-bash {baseDir}/scripts/hw1.sh "<command>"
-```
+**Do not** attempt `curl`, `wget`, `python`, `node`, `/dev/tcp`, or to execute `hw1.sh` yourself — you have no network and all of those fail. Do not read or edit `scripts/`; those files run host-side and are not used by you.
 
-**Health check:**
-```
-bash {baseDir}/scripts/hw1.sh --ping
-```
+**Argument limits:** arguments may use any normal printable text — including `=`, `;`, `@`, `{ }`, `"` (needed for automations, passwords, and JSON). Only control characters (newline/tab) are rejected; output is capped at ~64 KB per call.
 
-**GET an API endpoint (--get and the path are SEPARATE arguments, do NOT quote them together):**
-```
-bash {baseDir}/scripts/hw1.sh --get <path>
-```
+## Workflow
 
-Common examples:
-```
-bash {baseDir}/scripts/hw1.sh "status"
-bash {baseDir}/scripts/hw1.sh "uptime"
-bash {baseDir}/scripts/hw1.sh "temperature"
-bash {baseDir}/scripts/hw1.sh --ping
-bash {baseDir}/scripts/hw1.sh --get /api/sensors
-bash {baseDir}/scripts/hw1.sh --get "/api/files/list?path=/"
-```
+### 1. Find the right command
+The authoritative command list is `references/cli-commands.generated.md` (generated from firmware — every command with its admin flag, argument syntax, feature gate, and, for config commands, value type/range/default). Find the command there, then pass its name as `hardwareone_cli`'s `command`. Tunable settings and their commands are in `references/settings.generated.md`. **Read these before guessing a command name or its arguments.**
 
-DO NOT use curl, wget, or any HTTP client directly. The script manages authentication cookies, re-login on 401, and rate-limit handling automatically. Credentials are loaded from `{baseDir}/.env`.
+### Argument conventions
 
-## CRITICAL: Check available features FIRST
+- Most commands take positional args — `<command> <arg> [arg]` — and the catalog's usage line shows the exact form.
+- Some commands take **key=value** pairs, automations especially: `automationadd name=morning type=atTime time=07:00 command=status`. Chain multiple commands in one value with `;` (`commands=cmd1;cmd2`).
+- To change a **setting**, run its command with the new value, then persist: `ledbrightness 80`, then `savesettings`. The settings catalog lists each setting's command, type, range, and options.
 
-Not all commands exist on every device. Firmware builds vary — many modules may not be compiled in.
+### 2. Check features first on an unfamiliar device
+Run `hardwareone_cli` with `command: "features"`. Each feature is marked:
 
-**Before trying any sensor, display, or network module commands**, run:
-```
-bash {baseDir}/scripts/hw1.sh "features"
-```
+- `[ON]` — active, its commands work
+- `[OFF]` — compiled but disabled; toggleable with admin rights
+- `[N/C]` — **not compiled**; its commands do not exist. Don't attempt them.
 
-This returns each feature's state: `[ON]`, `[OFF]`, or `[N/C]`.
-- `[ON]` = active — its commands work
-- `[OFF]` = compiled but disabled — can be toggled on (admin)
-- `[N/C]` = **not compiled** — its commands **DO NOT EXIST** on this device. Do not attempt them.
+### 3. Always-available commands (no feature flag required)
 
-For example, if `thermal` shows `[N/C]`, then `openthermal`, `thermalread`, `closethermal` etc. will all return "Unknown command." Do NOT try them.
+`status`, `uptime`, `time`, `temperature`, `voltage`, `memsample`, `memreport`, `taskstats`, `fsusage`, `help`, `features`, `ledcolor`, `ledeffect`.
 
-**Always-available commands** (not tied to a feature flag): `status`, `uptime`, `time`, `temperature`, `voltage`, `memsample`, `memreport`, `taskstats`, `fsusage`, `help`, `features`, `ledcolor`, `ledeffect`
+### 4. Sensor pattern
 
-## Sensor Workflow
+Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 
-Most sensors follow Enable --> Read --> Disable (only if the sensor's feature shows `[ON]` or `[OFF]`):
-1. `open<sensor>` (e.g., `openthermal`)
-2. `<sensor>read` (e.g., `thermalread`)
-3. `close<sensor>` (e.g., `closethermal`)
+1. `open<sensor>` — e.g. `openthermal`
+2. `<sensor>read` — e.g. `thermalread`
+3. `close<sensor>` — e.g. `closethermal`
 
-## Multi-Device (ESP-NOW)
+### 5. Multi-device / ESP-NOW mesh
 
-If bonded as master, data may come from workers.
-- Check topology: run `bondstatus`
-- Remote sensors: `bash {baseDir}/scripts/hw1.sh --get /api/sensors/remote`
-- Remote commands: `espnowremote <peer> <user> <pass> <cmd>`
+- Check topology with `hardwareone_cli`, command `bondstatus`.
+- Remote sensor readings: `hardwareone_get`, path `/api/sensors/remote`.
+- Remote commands on peers: `hardwareone_cli`, command `espnowremote <peer> <user> <pass> <cmd>`.
 
-## Error Recovery
+### Common recipes
 
-- "Unknown command" --> Do NOT guess alternatives. Read `{baseDir}/references/api-reference.md` to find the correct command name.
-- "Error: Not initialized" --> Run the corresponding `open<sensor>` command first
-- "Usage: ..." --> Wrong syntax; check `{baseDir}/references/api-reference.md`
-- 401 --> Script handles re-auth automatically; if persistent, check HW1_USER/HW1_PASS
-- 403 --> Admin privileges required; inform user
-- "[Sensor] Error: Not connected" --> Hardware/wiring issue; do not retry, report to user
-- Empty output --> Report to user that the command returned no data. Do NOT make up a response.
+- **Read a sensor:** `openthermal` → `thermalread` → `closethermal`.
+- **Change & save a setting:** `ledbrightness 80`, then `savesettings`.
+- **Daily automation:** `automationadd name=morning type=atTime time=07:00 command=status` (time is device-local; set `tzoffsetminutes` first if needed).
+- **Get structured data:** `hardwareone_get` with `/api/sensors` returns JSON instead of CLI text.
 
-## Reference
+## Error recovery
 
-- Full command and endpoint list: `{baseDir}/references/api-reference.md` — READ THIS before guessing command names
+| Response | Action |
+| -------- | ------ |
+| `"Unknown command"` | Do NOT guess. Find the correct name in `references/cli-commands.generated.md`. |
+| `"Error: Not initialized"` / `"Not started"` | Call the matching `open<sensor>` first. |
+| `"Usage: ..."` / `"Detailed usage: ..."` | The device is showing you the correct syntax — read it and retry with the right arguments. |
+| Exit code 0 but no output | Report to the user; do not fabricate content. |
+| `"must be printable text"` | Your argument contained a control character (newline/tab) — remove it and retry. |
+| 401 / 403 | Auth or permissions issue; report to the user. |
+
+## Reference files you can read
+
+- `references/cli-commands.generated.md` — **exhaustive** command catalog (firmware-generated). The authoritative list; read before guessing.
+- `references/settings.generated.md` — every configurable setting, grouped by area, with the command that reads/writes it.
+- `references/api-reference.md` — curated guide: HTTP API endpoints, the feature `[ON]/[OFF]/[N/C]` model, error handling, and common commands in more depth.
+
+## What you cannot read or use from this sandbox
+
+- `scripts/hw1.sh` — host-side wrapper; not reachable or usable from the sandbox.
+- `.env` — credentials are handled entirely on the gateway side.
