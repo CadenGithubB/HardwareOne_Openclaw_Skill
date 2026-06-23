@@ -1,178 +1,102 @@
-# HardwareOne ESP32 Integration for OpenClaw
+# HardwareOne — OpenClaw integration
 
-A skill for interfacing with HardwareOne ESP32 devices via HTTP/HTTPS within OpenClaw.
+**Version 1.1.0**
 
-## What it does
+Lets an [OpenClaw](https://github.com/openclaw/openclaw) agent monitor and control a
+[HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 device.
 
-Interfaces with HardwareOne ESP32-based IoT devices for:
-- Sensor reading (when supported by device firmware)
-- System management (status, uptime, temperature, voltage, memory, filesystem)
-- ESP-NOW mesh networking coordination
-- On-device LLM control
-- Camera, microphone, and other peripherals (if compiled in)
+The OpenClaw agent runs in a sandbox with **no network**, so it can't reach the device
+directly. Instead this ships in two cooperating halves:
 
-## Installation
+```
+Agent (sandbox, no network) ──tool call──▶ Gateway plugin (host) ──spawn──▶ hw1.sh ──HTTP(S)──▶ ESP32
+```
 
-1. **Clone to your OpenClaw skills directory:**
+- **Plugin** (`plugin/`) — registers three tools on the OpenClaw gateway:
+  `hardwareone_ping`, `hardwareone_cli`, `hardwareone_get`.
+- **Skill** (`SKILL.md`, `references/`) — tells the agent how to use those tools and
+  which commands exist.
+- **Wrapper** (`scripts/hw1.sh`) — what the plugin shells out to on the host; handles
+  auth, timeouts, and TLS, and talks to the device over HTTP(S).
+
+The command and settings references are **generated from the firmware** by
+`tools/sync_command_reference.py`, so they stay accurate as the firmware evolves.
+
+## Layout
+
+| Path | What |
+|------|------|
+| `SKILL.md` | The agent-facing skill (tool usage, workflow, error recovery). |
+| `references/api-reference.md` | Curated guide: HTTP endpoints, the feature `[ON]/[OFF]/[N/C]` model, error handling. |
+| `references/cli-commands.generated.md` | Exhaustive command catalog (generated from firmware). |
+| `references/settings.generated.md` | Every configurable setting (generated from firmware). |
+| `scripts/hw1.sh` | Host-side HTTP wrapper the plugin calls. |
+| `tools/sync_command_reference.py` | Regenerates the catalogs from firmware (`--audit`, `--check`). |
+| `plugin/` | The gateway plugin (the three tools) + `deploy.sh`. |
+| `.env.template` | Device URL + credentials template (host-side; never enters the sandbox). |
+
+## Deploy (on the OpenClaw host)
+
+1. **Skill** — copy the skill where OpenClaw reads skills (and into the read-only
+   sandbox mirror, if your setup uses one):
    ```bash
-   cd ~/.openclaw/workspace/skills
-   git clone https://github.com/CadenGithubB/HardwareOne-Openclaw-Skill.git hardwareone
+   rsync -a --exclude='.env' SKILL.md references scripts ~/.openclaw/workspace/skills/hardwareone/
    ```
-   Or copy manually:
+2. **Credentials** — create the `.env` next to the skill and fill it in:
    ```bash
-   cp -r HardwareOne-Openclaw-Skill/ ~/.openclaw/workspace/skills/hardwareone
+   cp .env.template ~/.openclaw/workspace/skills/hardwareone/.env
+   # HW1_URL = any IP, hostname, or URL the host can reach
    ```
-
-2. **Configure credentials:**
+3. **Plugin** — deploy, wire, and restart the gateway in one step:
    ```bash
-   cp ~/.openclaw/workspace/skills/hardwareone/.env.template ~/.openclaw/workspace/skills/hardwareone/.env
+   bash plugin/deploy.sh
    ```
-   Then edit `.env` with your device details:
-   ```
-   HW1_URL=http://YOUR_DEVICE_IP
-   HW1_USER=your_username
-   HW1_PASS=your_password
-   ```
-
-3. **Ensure the script is executable:**
+   It copies the plugin into OpenClaw's `dist/extensions/`, re-points the per-release
+   `plugin-entry-<hash>` import, ensures the tool allowlists in `openclaw.json`,
+   flushes the jiti cache, and restarts the gateway. **Re-run it after every
+   `npm update openclaw`** — that wipes the plugin out of `dist/extensions/`.
+4. **Verify**:
    ```bash
-   chmod +x ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh
+   openclaw plugins list | grep hardwareone     # the plugin should be enabled
    ```
+   Then, in a fresh agent session: *"ping the hardwareone."*
 
-4. **Add to OpenClaw config** (if not auto-detected):
-   Ensure `"hardwareone"` is in `skills.allowBundled` in your `openclaw.json`.
-
-5. **Test the connection:**
-   ```bash
-   bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh --ping
-   ```
-
-## Usage
-
-### Basic Commands
+## Keeping the reference in sync with firmware
 
 ```bash
-# Check device health
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh --ping
-
-# Get system status
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "status"
-
-# Check uptime
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "uptime"
-
-# Read device temperature
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "temperature"
-
-# Check memory and filesystem
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "memsample"
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "taskstats"
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "fsusage"
+python3 tools/sync_command_reference.py            # regenerate the catalogs
+python3 tools/sync_command_reference.py --audit    # report metadata gaps
+python3 tools/sync_command_reference.py --check    # CI: exit 1 if the catalogs are stale
 ```
 
-### Feature Check (IMPORTANT!)
+Point it at your firmware checkout with `--firmware <path>` or `$HW1_FIRMWARE`
+(default `../hardwareone-idf`). See [tools/README.md](tools/README.md).
 
-**Always check available features first** before attempting sensor commands:
+## Configuration (`.env`)
 
-```bash
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "features"
-```
+| Var | Meaning |
+|-----|---------|
+| `HW1_URL` | Device address — any IP, hostname, or URL the gateway host can reach. |
+| `HW1_USER` / `HW1_PASS` | Device credentials. |
+| `HW1_INSECURE=1` or `HW1_CACERT=<path>` | Accept / pin a self-signed HTTPS cert (optional). |
+| `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). |
 
-Output shows:
-- `[ON]` = active, commands work
-- `[OFF]` = compiled but disabled
-- `[N/C]` = **not compiled**, commands don't exist on this device
+Credentials live only on the host and are never mounted into the sandbox.
 
-### Sensor Commands
+## Security model
 
-Most sensors follow this pattern (only if feature shows `[ON]` or `[OFF]`):
-
-```bash
-# Enable sensor
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "openthermal"
-
-# Read sensor data
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "thermalread"
-
-# Disable sensor
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh "closethermal"
-```
-
-### API Endpoint Access
-
-```bash
-# List all sensors
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh --get /api/sensors
-
-# List filesystem contents
-bash ~/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh --get "/api/files/list?path=/"
-```
-
-## Directory Structure
-
-```
-hardwareone/
-├── SKILL.md              # Skill brain file (read by OpenClaw agent)
-├── .env                  # Device credentials (never commit!)
-├── .env.template         # Credential template
-├── scripts/
-│   └── hw1.sh            # CLI wrapper script
-└── references/
-    └── api-reference.md  # Complete API and command reference
-```
-
-## Available Features (Device Dependent)
-
-### Core Commands (Always Available)
-- `status` - Device status overview
-- `uptime` - System uptime
-- `temperature` - ESP32 temperature sensor
-- `voltage` - Power information
-- `memsample` - Memory snapshot
-- `memreport` - Memory usage report
-- `taskstats` - Task statistics
-- `fsusage` - Filesystem usage
-- `features` - List active/inactive features
-
-### Optional Features (Check `[ON]`/`[OFF]`/`[N/C]`)
-- **Network**: WiFi, HTTP, Bluetooth, ESP-NOW, MQTT
-- **Display**: OLED, LED control
-- **Sensors**: Thermal, ToF, IMU, GPS, FM Radio, APDS, RTC, Presence, Camera, Microphone
-- **Advanced**: I2C, Edge Impulse, Automation
-
-## Security Notes
-
-- **Never commit `.env` file** — it contains device credentials
-- Script handles re-authentication on session expiry automatically
-- Admin privileges required for some operations (e.g., filesystem, user management)
-
-## Error Recovery
-
-- **Unknown command**: Check `references/api-reference.md` for correct command names
-- **Not initialized**: Run the corresponding `open<sensor>` command first
-- **Not connected**: Hardware/wiring issue, don't retry automatically
-- **Empty output**: Report to user, don't fabricate responses
-- **403**: Requires admin privileges
-
-## Troubleshooting
-
-- **Connection fails**: Verify device IP, username, and password in `.env`
-- **Script not found**: Ensure `hw1.sh` is executable (`chmod +x`)
-- **Permission denied**: Check file permissions on the scripts directory
-
-## Updating
-
-Pull latest changes and restart the OpenClaw gateway if needed:
-```bash
-cd ~/.openclaw/workspace/skills/hardwareone
-git pull
-```
+- The agent's sandbox has **no network** (`NetworkMode: none`); the three gateway tools
+  are the only path to the device — the same pattern OpenClaw uses for web search.
+- Tool inputs are length-capped, and `hardwareone_get` is restricted to `/api/...` paths.
+- The plugin `spawn`s the wrapper with an argv array — **never a shell** — so command
+  arguments can't be shell-interpreted on the host.
+- Device credentials stay host-side; nothing privileged crosses the sandbox boundary.
 
 ## Credits
 
-- Based on [HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 firmware
-- Integrated with the [OpenClaw](https://github.com/openclaw/openclaw) skill system
+- Firmware: [HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 platform.
+- Runs as an [OpenClaw](https://github.com/openclaw/openclaw) skill + gateway plugin.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
