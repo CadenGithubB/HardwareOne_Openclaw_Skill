@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 
-const HW1_SCRIPT = "/Users/openclaw/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh";
+// Host-side wrapper the tools shell out to. Defaults to the standard skill location
+// under the gateway user's home; set HW1_SCRIPT to override if your skill lives elsewhere.
+const HW1_SCRIPT =
+  process.env.HW1_SCRIPT ||
+  `${process.env.HOME}/.openclaw/workspace/skills/hardwareone/scripts/hw1.sh`;
 const TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
