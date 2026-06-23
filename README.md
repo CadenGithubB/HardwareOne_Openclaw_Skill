@@ -42,11 +42,17 @@ The command and settings references are **generated from the firmware** by
    ```bash
    rsync -a --exclude='.env' SKILL.md references scripts ~/.openclaw/workspace/skills/hardwareone/
    ```
-2. **Credentials** — create the `.env` next to the skill and fill it in:
+2. **Credentials** — copy the template, then fill in **all three** required values for your device:
    ```bash
    cp .env.template ~/.openclaw/workspace/skills/hardwareone/.env
-   # HW1_URL = any IP, hostname, or URL the host can reach
    ```
+   Edit the new `.env` so each line has your device's value:
+   ```
+   HW1_URL=http://192.168.1.50   # device IP, hostname, or full URL the host can reach
+   HW1_USER=admin                # device login username
+   HW1_PASS=your-password        # device login password
+   ```
+   All three are required — without them the wrapper exits with a "must be set" error.
 3. **Plugin** — deploy, wire, and restart the gateway in one step:
    ```bash
    bash plugin/deploy.sh
