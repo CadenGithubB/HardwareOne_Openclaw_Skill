@@ -55,8 +55,10 @@ gateway tools:
 
 ## Deploy (on the OpenClaw host)
 
-1. **Skill** — copy the skill where OpenClaw reads skills (and into the read-only
-   sandbox mirror, if your setup uses one):
+1. **Skill** — copy the skill into your OpenClaw **skills directory** (and into the
+   read-only sandbox mirror, if your setup uses one). The path below is the default —
+   `~` expands to whoever runs OpenClaw, so it isn't tied to one machine; change it if
+   your install keeps skills elsewhere:
    ```bash
    rsync -a --exclude='.env' SKILL.md references scripts ~/.openclaw/workspace/skills/hardwareone/
    ```
