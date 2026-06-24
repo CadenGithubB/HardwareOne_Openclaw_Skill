@@ -22,6 +22,24 @@ Agent (sandbox, no network) ──tool call──▶ Gateway plugin (host) ─�
 The command and settings references are **generated from the firmware** by
 `tools/sync_command_reference.py`, so they stay accurate as the firmware evolves.
 
+## What it looks like
+
+A locally-run OpenClaw agent creating a scheduled automation on the device — from a
+plain-English request to a live, enabled automation on the ESP32, entirely through the
+gateway tools:
+
+**1. The request**
+
+![Asking the agent to create a daily automation called dailyrunner](assets/demo-1-request.png)
+
+**2. The agent finds the right command in the skill's catalog and runs it**
+
+![The agent runs automationadd with the atTime type and creates the automation](assets/demo-2-create.png)
+
+**3. …created, enabled, and scheduled on the device**
+
+![The automation is created, enabled, and scheduled to run status daily at 7 AM](assets/demo-3-result.png)
+
 ## Layout
 
 | Path | What |
