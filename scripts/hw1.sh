@@ -3,7 +3,10 @@
 # Handles authentication, session caching, timeouts, TLS, and command execution.
 # Requires: curl
 #
-# Required (env, or a .env next to the skill root):
+# Credentials are read from the first that exists: $HW1_ENV, ~/.openclaw/hardwareone.env,
+# or a legacy skill-local .env. Keep them OUTSIDE the skill dir — OpenClaw mirrors the skill
+# directory into the agent sandbox, so a .env inside it would expose HW1_USER/HW1_PASS.
+# Required:
 #   HW1_URL    device address — any IP / hostname / URL, e.g. http://192.168.1.42   (https://… supported — see TLS below)
 #   HW1_USER   device username
 #   HW1_PASS   device password
@@ -18,8 +21,13 @@
 
 set -euo pipefail
 
-# Load credentials from .env if present
-if [[ -f "$(dirname "$0")/../.env" ]]; then set -a; source "$(dirname "$0")/../.env"; set +a; fi
+# Load credentials (see header). Prefer a host-only file outside the skill directory, so
+# credentials are never swept into OpenClaw's sandbox mirror of the skill dir.
+if [[ -z "${HW1_URL:-}" || -z "${HW1_USER:-}" || -z "${HW1_PASS:-}" ]]; then
+    for _envf in "${HW1_ENV:-}" "$HOME/.openclaw/hardwareone.env" "$(dirname "$0")/../.env"; do
+        if [[ -n "$_envf" && -f "$_envf" ]]; then set -a; source "$_envf"; set +a; break; fi
+    done
+fi
 
 URL="${HW1_URL:-}"
 USER="${HW1_USER:-}"
