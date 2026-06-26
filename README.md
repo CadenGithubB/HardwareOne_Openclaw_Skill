@@ -71,7 +71,7 @@ gateway tools:
    ```
    Edit it so each line has your device's value:
    ```
-   HW1_URL=http://192.168.1.50   # device IP, hostname, or full URL the host can reach
+   HW1_URL=192.168.1.50          # bare IP auto-detects http/https (or use a full URL to pin it)
    HW1_USER=admin                # device login username
    HW1_PASS=your-password        # device login password
    ```
@@ -106,7 +106,7 @@ Point it at your firmware checkout with `--firmware <path>` or `$HW1_FIRMWARE`
 
 | Var | Meaning |
 |-----|---------|
-| `HW1_URL` | Device address — any IP, hostname, or URL the gateway host can reach. |
+| `HW1_URL` | Device address. A bare IP/host (`192.168.1.42`) auto-detects http vs https; a full URL pins the scheme. |
 | `HW1_USER` / `HW1_PASS` | Device credentials. |
 | `HW1_INSECURE=1` or `HW1_CACERT=<path>` | Accept / pin a self-signed HTTPS cert (optional). |
 | `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). |

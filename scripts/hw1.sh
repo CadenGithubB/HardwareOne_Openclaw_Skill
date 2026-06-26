@@ -7,7 +7,8 @@
 # or a legacy skill-local .env. Keep them OUTSIDE the skill dir — OpenClaw mirrors the skill
 # directory into the agent sandbox, so a .env inside it would expose HW1_USER/HW1_PASS.
 # Required:
-#   HW1_URL    device address — any IP / hostname / URL, e.g. http://192.168.1.42   (https://… supported — see TLS below)
+#   HW1_URL    device address — just the IP/host (e.g. 192.168.1.42) and the wrapper auto-picks
+#              http or https, or a full URL (http://… / https://…) to pin the scheme.
 #   HW1_USER   device username
 #   HW1_PASS   device password
 #
@@ -39,6 +40,7 @@ CONNECT_TIMEOUT="${HW1_CONNECT_TIMEOUT:-5}"
 REQ_TIMEOUT="${HW1_TIMEOUT:-30}"
 LONG_TIMEOUT="${HW1_TIMEOUT_LONG:-300}"
 AUTH_PROBE="${HW1_AUTH_PROBE:-/api/system}"
+BASE_CACHE="$COOKIE_DIR/base_url"
 
 # --- Preflight ---
 if [[ -z "$URL" || -z "$USER" || -z "$PASS" ]]; then
@@ -82,6 +84,46 @@ report_curl_failure() {
             echo "Error: TLS/certificate problem with '$URL'. For a self-signed cert set HW1_INSECURE=1 (trusted LAN only) or HW1_CACERT=/path/to/cert.pem." >&2 ;;
         *)  echo "Error: could not reach '$URL' (curl exit $1)." >&2 ;;
     esac
+}
+
+# --- Resolve the device base URL (auto http<->https on the same host) ---
+# HW1_URL may be a bare IP/host or a full URL. Probe the public /api/ping on each
+# candidate (cached -> configured scheme -> the other) and use the one that answers,
+# caching it. Only one scheme is ever up at a time, so the first responder is correct.
+resolve_base() {
+    local raw="$URL" host cfg cached
+    host="${raw#http://}"; host="${host#https://}"
+    case "$raw" in
+        https://*) cfg=https ;;
+        http://*)  cfg=http ;;
+        *)         cfg="" ;;
+    esac
+    [[ -f "$BASE_CACHE" ]] && cached="$(cat "$BASE_CACHE" 2>/dev/null)"
+
+    local order=() seen=" "
+    _add() { case "$seen" in *" $1 "*) ;; *) order+=("$1"); seen="$seen$1 " ;; esac; }
+    [[ -n "$cached" && "${cached#http*://}" == "$host" ]] && _add "$cached"
+    if [[ -n "$cfg" ]]; then
+        _add "$cfg://$host"
+        [[ "$cfg" == "http" ]] && _add "https://$host" || _add "http://$host"
+    else
+        _add "http://$host"; _add "https://$host"
+    fi
+
+    local cand code rc last_rc=7
+    for cand in "${order[@]}"; do
+        rc=0
+        code=$(hw_curl "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' "$cand/api/ping") || rc=$?
+        if [[ "$rc" -eq 0 && -n "$code" && "$code" != "000" ]]; then
+            URL="$cand"
+            { printf '%s' "$cand" > "$BASE_CACHE"; chmod 600 "$BASE_CACHE"; } 2>/dev/null || true
+            return 0
+        fi
+        last_rc="$rc"
+    done
+    echo "Error: could not reach the device on http or https at '$host'." >&2
+    report_curl_failure "$last_rc"
+    return 1
 }
 
 # --- Auth: log in, then PROVE the session works via an auth-gated endpoint ---
@@ -193,6 +235,8 @@ do_cli() {
 }
 
 # --- Main ---
+resolve_base || exit 1
+
 case "${1:-}" in
     --ping)
         do_get "/api/ping"; exit $? ;;
