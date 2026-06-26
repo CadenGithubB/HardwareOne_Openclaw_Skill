@@ -62,17 +62,21 @@ gateway tools:
    ```bash
    rsync -a --exclude='.env' SKILL.md references scripts ~/.openclaw/workspace/skills/hardwareone/
    ```
-2. **Credentials** — copy the template, then fill in **all three** required values for your device:
+2. **Credentials** — create a **host-only** credentials file *outside* the skill directory and
+   fill in **all three** values. Keep it outside the skill dir (`~/.openclaw/hardwareone.env`) —
+   OpenClaw mirrors the skill directory into the agent sandbox, so credentials kept inside it
+   would be readable by the agent:
    ```bash
-   cp .env.template ~/.openclaw/workspace/skills/hardwareone/.env
+   cp .env.template ~/.openclaw/hardwareone.env && chmod 600 ~/.openclaw/hardwareone.env
    ```
-   Edit the new `.env` so each line has your device's value:
+   Edit it so each line has your device's value:
    ```
    HW1_URL=http://192.168.1.50   # device IP, hostname, or full URL the host can reach
    HW1_USER=admin                # device login username
    HW1_PASS=your-password        # device login password
    ```
    All three are required — without them the wrapper exits with a "must be set" error.
+   (`hw1.sh` also honors `$HW1_ENV` or a legacy skill-local `.env`, but the host-only path is preferred.)
 3. **Plugin** — deploy, wire, and restart the gateway in one step:
    ```bash
    bash plugin/deploy.sh
