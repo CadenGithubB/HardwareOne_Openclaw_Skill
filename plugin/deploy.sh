@@ -61,8 +61,8 @@ if [[ -f "$CONFIG" ]] && command -v jq >/dev/null 2>&1; then
   jq '
     .plugins.allow = ((.plugins.allow // []) + ["hardwareone"] | unique) |
     .plugins.entries.hardwareone = {"enabled": true} |
-    .tools.alsoAllow = ((.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_get"] | unique) |
-    .tools.sandbox.tools.alsoAllow = ((.tools.sandbox.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_get"] | unique)
+    .tools.alsoAllow = ((.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_get","hardwareone_devices"] | unique) |
+    .tools.sandbox.tools.alsoAllow = ((.tools.sandbox.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_get","hardwareone_devices"] | unique)
   ' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
   echo "   ensured plugins.allow + plugins.entries.hardwareone + tool allowlists (config backed up)"
 else

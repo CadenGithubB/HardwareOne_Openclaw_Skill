@@ -4,7 +4,7 @@
      Regenerate with: tools/sync_command_reference.py
      Source of truth: firmware gCommandModules[] + SettingEntry tables. -->
 
-> Firmware commit `f5fcc22` · 824 commands · 43 modules
+> Firmware commit `2d466cf` · 824 commands · 43 modules
 
 Generated directly from the firmware command tables, so it always matches the build it came from. **Feature gating still applies:** a module whose compile guard is not defined is absent entirely — run `features` on the device for live `[ON]`/`[OFF]`/`[N/C]` state. Admin-only commands are marked *(admin)*. Commands backed by a stored setting show their value type / range / default / options; see [`settings.generated.md`](settings.generated.md) for the full configuration view.
 
@@ -140,17 +140,17 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowsaturationreset` — Clear the saturation rolling window (use before a stress test).
 - `espnowidentity` — Show long-term Ed25519 identity (MAC, pub key, createdAtSec, regenCount).
 - `espnowregenidentity` *(admin)* — Regenerate Ed25519 identity. Requires '--confirm-wipe-all-bonds'. · `espnowregenidentity --confirm-wipe-all-bonds`
-- `espnowkeyex` *(admin)* — Initiate KEY_EX handshake with a peer (Phase 3.3 — runs alongside legacy pairing). · `espnowkeyex <mac> [<mesh>]`
+- `espnowkeyex` *(admin)* — Initiate KEY_EX handshake with a peer (Phase 3.3 — runs alongside legacy pairing). (async - handshake completes later; check espnowsessions) · `espnowkeyex <mac> [<mesh>] Returns OK when KEY_EX_HELLO is sent; the handshake completes asynchronously - inspect with 'espnowsessions' / 'espnowencstatus'.`
 - `espnowprobe` *(admin)* — Reachability probe via KEY_EX. Synchronous, bounded timeout. Reports alive+mesh+firmware in one shot (no plaintext on the wire). · `espnowprobe <name_or_mac> [<timeoutMs (50-5000, default 500)>] [<mesh>]`
-- `espnowsessionopen` *(admin)* — Initiate SESSION handshake (Phase 3.4 — requires prior espnowkeyex). · `espnowsessionopen <mac> [<mesh>]`
+- `espnowsessionopen` *(admin)* — Initiate SESSION handshake (Phase 3.4 — requires prior espnowkeyex). (async - session goes ACTIVE later; check espnowsessions) · `espnowsessionopen <mac> [<mesh>] Returns OK when SESSION_OPEN is sent; the session becomes ACTIVE when CONFIRM arrives - run 'espnowsessions'.`
 - `espnowsessions` — Show in-RAM session state (peer, sessionId, dir, age, counters).
-- `espnowsessionsend` *(admin)* — Send AEAD-wrapped TEXT through active session (Phase 3.5a demo). · `espnowsessionsend <mac> <message>`
-- `espnowrekey` *(admin)* — Force immediate SESSION_REKEY for a peer (Phase 3.6 — manual trigger). · `espnowrekey <mac>`
+- `espnowsessionsend` *(admin)* — Send AEAD-wrapped TEXT through active session (Phase 3.5a demo). (async send; delivery only, no reply) · `espnowsessionsend <mac> <message> Returns OK on delivery; no application reply comes back.`
+- `espnowrekey` *(admin)* — Force immediate SESSION_REKEY for a peer (Phase 3.6 — manual trigger). (async - completes later; check espnowsessions) · `espnowrekey <mac> Returns OK when REKEY is sent; new keys derive when the peer's REKEY arrives - verify with 'espnowsessions'.`
 - `espnowsubs` — Phase 5: list peers + their event-subscription bitmaps (what they want from us).
-- `espnowrequestevents` *(admin)* — Phase 5: ask a peer to send US only events in <bitmask>. Updates state ON THE PEER. · `espnowrequestevents <mac> <bitmask>`
+- `espnowrequestevents` *(admin)* — Phase 5: ask a peer to send US only events in <bitmask>. Updates state ON THE PEER. (async - changes peer state, no reply; verify with espnowsubs on the peer) · `espnowrequestevents <mac> <bitmask> Returns OK on delivery; this updates the PEER's subscription (no confirmation returns) - run 'espnowsubs' on that peer to verify.`
 - `openespnow` *(admin)* — Initialize ESP-NOW communication.
 - `closeespnow` *(admin)* — Deinitialize ESP-NOW and free resources.
-- `espnowpair` *(admin)* — Pair ESP-NOW device: 'espnowpair <mac> <name> [mesh]'. · `espnowpair <mac> <name> [mesh]`
+- `espnowpair` *(admin)* — Pair ESP-NOW device: 'espnowpair <mac> <name> [mesh]'. (synchronous; local registry add, no remote handshake) · `espnowpair <mac> <name> [mesh]`
 - `espnowunpair` *(admin)* — Unpair ESP-NOW device (also clears its crypto identity): 'espnowunpair <name_or_mac>'. · `espnowunpair <name_or_mac>`
 - `espnowforget` *(admin)* — Forget a peer's crypto identity + close its session: 'espnowforget <name_or_mac>'. · `espnowforget <name_or_mac>`
 - `espnowlist` — List all paired ESP-NOW devices.
@@ -166,9 +166,9 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowmeshmaster` *(admin)* — Get/set master MAC: 'espnowmeshmaster [MAC]'. · `espnowmeshmaster [<AA:BB:CC:DD:EE:FF>]` _(setting · string · default (empty))_
 - `espnowmeshbackup` *(admin)* — Get/set backup MAC: 'espnowmeshbackup [MAC]'. · `espnowmeshbackup [<AA:BB:CC:DD:EE:FF>]` _(setting · string · default (empty))_
 - `espnowbackupenable` *(admin)* — Enable/disable backup master feature: 'espnowbackupenable [on|off]'. · `espnowbackupenable [on|off]` _(setting · bool · default off)_
-- `espnowmeshtopo` — Discover mesh topology (master only).
+- `espnowmeshtopo` — Discover mesh topology (master only). (async - read results with espnowtoporesults)
 - `espnowtoporesults` — Get topology discovery results.
-- `espnowtimesync` — Broadcast NTP time to mesh (master only).
+- `espnowtimesync` — Broadcast NTP time to mesh (master only). (async broadcast; delivery only, no reply)
 - `espnowtimestatus` — Show time synchronization status.
 - `espnowmeshsave` — Manually save mesh peer topology to filesystem.
 - `espnowroom` — Get/set device room: 'espnowroom [name]'. · `espnowroom [Kitchen|Bedroom|...] espnowroom clear` _(setting · string · default (empty))_
@@ -180,39 +180,39 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowdevices` — List all mesh devices with room/zone/tags/status: espnowdevices [json].
 - `espnowrooms` — List rooms and their devices (master).
 - `espnowfind` — Find devices by name, room, or tag: 'espnowfind <query>'. · `espnowfind <query>`
-- `espnowroomcmd` *(admin)* — Run command on all devices in a room. · `espnowroomcmd <room> <user> <pass> <command>`
-- `espnowtagcmd` *(admin)* — Run command on all devices with a tag. · `espnowtagcmd <tag> <user> <pass> <command>`
-- `espnowsend` — Send message (auto-routes via mesh if enabled): 'espnowsend <name_or_mac> <message>'. · `espnowsend <name_or_mac> <message>`
-- `espnowbroadcast` — Broadcast message: 'espnowbroadcast <message>'. · `espnowbroadcast <message>`
-- `espnowsendfile` — Send file: 'espnowsendfile <name_or_mac> "<filepath>"'. · `espnowsendfile <name_or_mac> "<filepath>"`
-- `espnowbrowse` — Browse remote files: 'espnowbrowse <name_or_mac> <user> <pass> ["path"]'. · `espnowbrowse <target> <username> <password> ["path"]`
-- `espnowfetch` — Fetch remote file: 'espnowfetch <name_or_mac> <user> <pass> "<path>"'. · `espnowfetch <target> <username> <password> "<path>"`
-- `espnowremote` — Execute remote command: 'espnowremote <name_or_mac> <user> <pass> <cmd>'. · `espnowremote <target> <username> <password> <command>`
+- `espnowroomcmd` *(admin)* — Run command on all devices in a room. (async - replies via espnowmessages json) · `espnowroomcmd <room> <user> <pass> <command> Returns OK on dispatch; each device's reply arrives later in 'espnowmessages json'.`
+- `espnowtagcmd` *(admin)* — Run command on all devices with a tag. (async - replies via espnowmessages json) · `espnowtagcmd <tag> <user> <pass> <command> Returns OK on dispatch; each device's reply arrives later in 'espnowmessages json'.`
+- `espnowsend` — Send message (auto-routes via mesh if enabled): 'espnowsend <name_or_mac> <message>'. (async send; delivery only, no reply) · `espnowsend <name_or_mac> <message> Returns OK on delivery; one-way message, no result comes back.`
+- `espnowbroadcast` — Broadcast message: 'espnowbroadcast <message>'. (async send; delivery only, no reply) · `espnowbroadcast <message> Returns the count sent; one-way broadcast, no per-device reply.`
+- `espnowsendfile` — Send file: 'espnowsendfile <name_or_mac> "<filepath>"'. (synchronous local send; does not confirm peer accepted) · `espnowsendfile <name_or_mac> "<filepath>" Blocks until the file is sent; 'success' means locally transmitted, not that the receiver stored it.`
+- `espnowbrowse` — Browse remote files: 'espnowbrowse <name_or_mac> <user> <pass> ["path"]'. (async - result via espnowmessages json) · `espnowbrowse <target> <username> <password> ["path"] Returns OK on delivery; the remote listing arrives later - read with 'espnowmessages json' (match the reqId).`
+- `espnowfetch` — Fetch remote file: 'espnowfetch <name_or_mac> <user> <pass> "<path>"'. (async - status via espnowmessages json; file saved on this device) · `espnowfetch <target> <username> <password> "<path>" Returns OK on delivery; status lands in 'espnowmessages json'; the fetched file is written to this device's filesystem.`
+- `espnowremote` — Execute remote command: 'espnowremote <name_or_mac> <user> <pass> <cmd>'. (async - result via espnowmessages json) · `espnowremote <target> <username> <password> <command> Returns OK on delivery; the remote command output arrives later - read with 'espnowmessages json' (match the reqId).`
 - `openstream` *(admin)* — Start streaming all output to ESP-NOW caller (admin, remote only).
 - `closestream` *(admin)* — Stop streaming output to ESP-NOW device (admin).
 - `espnowworker` — Configure worker status reporting: 'espnowworker [show|on|off|interval <ms>|fields <list>]'. · `espnowworker [show|on|off|interval <ms>|fields <heap,rssi,thermal,imu>]`
-- `espnowsensorstream` — Enable/disable sensor data streaming to master (worker only): 'espnowsensorstream <sensor> <on|off>'. · `espnowsensorstream <thermal|tof|imu|gps|input|fmradio|camera|microphone|rtc|presence|apds> <on|off>`
+- `espnowsensorstream` — Enable/disable sensor data streaming to master (worker only): 'espnowsensorstream <sensor> <on|off>'. (local toggle; streamed data lands on the master's espnowsensorstatus) · `espnowsensorstream <thermal|tof|imu|gps|input|fmradio|camera|microphone|rtc|presence|apds> <on|off> Local on/off toggle; the worker then streams to the master, viewable there via 'espnowsensorstatus' / GET /api/sensors/remote.`
 - `espnowsensorstatus` — Show remote sensor cache (master) or worker streaming status (worker).
 - `espnowsensorbroadcast` — Enable/disable all sensor ESP-NOW communication: 'espnowsensorbroadcast <on|off>'. · `espnowsensorbroadcast [on|off]`
 - `espnowusersync` *(admin)* — Enable/disable user credential sync: 'espnowusersync [on|off]'. · `espnowusersync [on|off]` _(setting · bool · default off)_
-- `espnowrequestmeta` — Request metadata from peer: 'espnowrequestmeta <name_or_mac>'. · `espnowrequestmeta <name_or_mac>`
-- `bondconnect` — Connect to bonded peer device: 'bondconnect <mac_or_name>'. · `bondconnect <mac_or_name>`
+- `espnowrequestmeta` — Request metadata from peer: 'espnowrequestmeta <name_or_mac>'. (async - updates cache; view with espnowdevices/espnowdeviceinfo) · `espnowrequestmeta <name_or_mac> Returns OK on delivery; the peer's name/room/zone/tags arrive later and update the local cache shown by 'espnowdevices' and 'espnowdeviceinfo'.`
+- `bondconnect` — Connect to bonded peer device: 'bondconnect <mac_or_name>'. (async - bond establishes when peer is seen; watch bondstatus) · `bondconnect <mac_or_name> Returns immediately; the bond completes when the peer appears via heartbeat - watch 'bondstatus'.`
 - `bonddisconnect` — Disconnect from bonded peer device.
 - `bondstatus` — Show bond mode status and configuration.
 - `bondrole` — Set bond mode role: 'bondrole <master|worker>'. · `bondrole <master|worker>` _(setting · enum · default 0 (Worker (compute/network)) · options 0=Worker (compute/network), 1=Master (display/gamepad))_
 - `bondshowcap` — Show local device capability summary.
-- `bondrequestcap` — Request capability summary from bonded peer.
+- `bondrequestcap` — Request capability summary from bonded peer. (async - remote cap via GET /api/bond/status; note bondshowcap shows LOCAL cap)
 - `bondshowmanifest` — Show local device manifest (UI apps + CLI commands).
-- `bondrequestmanifest` — Request full manifest from bonded peer.
-- `bondrequestsettings` — Request settings file from bonded peer.
-- `bondrequestschema` — Request settings schema from bonded peer.
-- `bondresync` — Force re-sync of bond state (cap+manifest+settings+schema). Use when UI is stuck on 'Establishing Bond' or peer state looks stale. · `bondresync [--cap|--manifest|--settings|--schema|--all]`
+- `bondrequestmanifest` — Request full manifest from bonded peer. (async - view with bondshowremotemanifest)
+- `bondrequestsettings` — Request settings file from bonded peer. (async - cached; read via GET /api/bond/settings)
+- `bondrequestschema` — Request settings schema from bonded peer. (async - cached; read via GET /api/bond/settings/schema)
+- `bondresync` — Force re-sync of bond state (cap+manifest+settings+schema). Use when UI is stuck on 'Establishing Bond' or peer state looks stale. (async - results populate as they arrive) · `bondresync [--cap|--manifest|--settings|--schema|--all] Returns OK on dispatch; results arrive over time - view via 'bondshowremotemanifest' and GET /api/bond/status, /api/bond/settings, /api/bond/settings/schema.`
 - `bondshowremotemanifest` — Show cached remote manifest(s): 'bondshowremotemanifest [fwHash]'. · `bondshowremotemanifest [<fwHash>]`
-- `bondstream` — Stream sensor data to bonded master (worker only): 'bondstream <sensor> <on|off>'. · `bondstream <sensor> <on|off> bondstream (show status)`
-- `bondtestsensor` — Test v3 sensor data transmission: 'bondtestsensor [sensor_type]'. · `bondtestsensor [thermal|tof|imu|gps|gamepad|fmradio]`
+- `bondstream` — Stream sensor data to bonded master (worker only): 'bondstream <sensor> <on|off>'. (local toggle; streamed data lands on the master's espnowsensorstatus) · `bondstream <sensor> <on|off> bondstream (show status) Local on/off toggle; the worker streams to the bonded master, viewable there via 'espnowsensorstatus' / GET /api/sensors/remote.`
+- `bondtestsensor` — Test v3 sensor data transmission: 'bondtestsensor [sensor_type]'. (async - frame appears on the master via espnowsensorstatus) · `bondtestsensor [thermal|tof|imu|gps|gamepad|fmradio] Returns OK on send; the test frame appears on the bonded master's remote-sensor cache ('espnowsensorstatus' / GET /api/sensors/remote).`
 - `espnowsetpassphrase` *(admin)* — Set encryption passphrase on a mesh: 'espnowsetpassphrase <mesh> <phrase>'. · `espnowsetpassphrase <mesh> <passphrase> espnowsetpassphrase <mesh> clear`
 - `espnowencstatus` *(admin)* — Show ESP-NOW encryption status and key fingerprint.
-- `espnowpairsecure` *(admin)* — Pair device with encryption: 'espnowpairsecure <mac> <name> [mesh]'. · `espnowpairsecure <mac_address> <device_name> [mesh]`
+- `espnowpairsecure` *(admin)* — Pair device with encryption: 'espnowpairsecure <mac> <name> [mesh]'. (local pair is synchronous; secure channel completes async - see espnowsessions) · `espnowpairsecure <mac_address> <device_name> [mesh] The device is added synchronously; KEY_EX then runs asynchronously (~100ms) so the encrypted channel becomes usable shortly after - inspect with 'espnowsessions' / 'espnowencstatus'.`
 - `teststreams` — Test topology stream management functions.
 - `testconcurrent` — Test concurrent topology streams (simulated).
 - `testcleanup` — Test cleanup of stale topology streams.
@@ -1008,7 +1008,7 @@ The users subsystem provides admin-gated account management, authentication, ses
 - `useradd` *(admin)* — Create user: <username> <password> [0|1] · `useradd <username> <password> [0|1] Optional: 1 = require new password on next login, 0 = omit`
 - `userlist` *(admin)* — List all users.
 - `userrequest` — Request account: <user> <pass> [confirm] · `userrequest <username> <password> [confirmPassword]`
-- `usersync` *(admin)* — Sync a user to another device over ESP-NOW. · `usersync <username> <userPass> <device> <targetAdminUser> <targetAdminPass> <yourAdminPass> targetAdminUser/targetAdminPass = an admin account on the RECEIVING device (validated there). yourAdminPass = your admin password on THIS device; userPass = the synced user's password.`
+- `usersync` *(admin)* — Sync a user to another device over ESP-NOW. (async; result only on the target device - check its userlist) · `usersync <username> <userPass> <device> <targetAdminUser> <targetAdminPass> <yourAdminPass> Returns OK on delivery; the user is created on the TARGET device (no confirmation returns here) - verify on that device's userlist. targetAdminUser/targetAdminPass = an admin account on the RECEIVING device (validated there). yourAdminPass = your admin password on THIS device; userPass = the synced user's password.`
 - `pendinglist` *(admin)* — List pending user requests.
 - `sessionlist` *(admin)* — List active sessions.
 - `sessionrevoke` *(admin)* — Revoke session: <sid|user> [reason] · `sessionrevoke sid <sid> [reason] sessionrevoke user <username> [reason]`
@@ -1036,7 +1036,7 @@ Captures stills from the camera and manages the saved photo library. capture gra
 - `capture` — Capture and save image: capture [littlefs|sd|both] · `capture [littlefs|lfs|sd|both]`
 - `images` — List saved images: images [littlefs|sd] · `images [sd] [json]`
 - `imagedelete` *(admin)* — Delete image: imagedelete "<path>" · `imagedelete "<path>"`
-- `imagesend` — Send image via ESP-NOW: imagesend <device> ["<path>"] · `imagesend <device> ["<path>"]`
+- `imagesend` — Send image via ESP-NOW: imagesend <device> ["<path>"] (async send; arrives on the peer, no local result) · `imagesend <device> ["<path>"] Returns OK on dispatch; the image is written to the peer's /espnow/received/ inbox - no completion status returns to the sender.`
 
 ### `map` — Map navigation and waypoints
 
