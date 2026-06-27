@@ -30,8 +30,17 @@ An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C 
 
 ## Workflow
 
-### 1. Find the right command
-The authoritative command list is `references/cli-commands.generated.md` (generated from firmware — every command with its admin flag, argument syntax, feature gate, and, for config commands, value type/range/default). Find the command there, then pass its name as `hardwareone_cli`'s `command`. Tunable settings and their commands are in `references/settings.generated.md`. **Read these before guessing a command name or its arguments.**
+### 1. Find the right command — search the catalog; never web-search
+
+`references/cli-commands.generated.md` is the **complete, authoritative** list of every command (with its admin flag, argument syntax, feature gate, and — for config commands — value type/range/default). Settings and their commands are in `references/settings.generated.md`.
+
+When you need a command — or one didn't do what you expected — work in this order:
+
+1. **Search the catalog by keyword.** Map the task to a word and look it up: peer metadata → search `meta` (you'll find `espnowrequestmeta`); a sensor → its name; a setting → its area. The command you need is almost always already there.
+2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments.
+3. Then pass the exact command name to `hardwareone_cli`.
+
+**Never web-search** for HardwareOne commands, errors, or behavior — this is a private device with no public documentation, so a web search returns nothing useful and only wastes turns. The catalog and the device's own `help`/`Usage:` output are the only sources of truth. If a command isn't in the catalog, it does not exist — don't invent or guess one.
 
 ### Argument conventions
 
@@ -62,7 +71,11 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 
 - Check topology with `hardwareone_cli`, command `bondstatus`.
 - Remote sensor readings: `hardwareone_get`, path `/api/sensors/remote`.
-- Remote commands on peers: `hardwareone_cli`, command `espnowremote <peer> <user> <pass> <cmd>`.
+- **Peer commands are asynchronous.** `espnowremote`, `espnowfetch`, and `espnowbrowse` return `OK` when the request is *delivered* — never the result inline. Read the actual output from the message buffer: `espnowmessages json [<peer-mac>]`. Don't hunt for it in the HTTP API or in files.
+- **Moving files between devices:**
+  - `espnowsendfile <peer> "<path>"` — push a local file TO a peer.
+  - `espnowfetch <peer> <user> <pass> "<path>"` — pull a peer's file to local storage (auto-renamed on a name clash, e.g. `battery.csv.1`).
+  - To make a peer send *its own* file to you, run sendfile **on the peer** via remote exec: `espnowremote <peer> <user> <pass> espnowsendfile <your-name-or-mac> "/battery.csv"` (get your own name/MAC from `espnowstatus`).
 
 ### Common recipes
 
@@ -75,7 +88,7 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 
 | Response | Action |
 | -------- | ------ |
-| `"Unknown command"` | Do NOT guess. Find the correct name in `references/cli-commands.generated.md`. |
+| `"Unknown command"` | Do NOT guess and do NOT web-search. Search `references/cli-commands.generated.md` by keyword, or run `help <module>` on the device. |
 | `"Error: Not initialized"` / `"Not started"` | Call the matching `open<sensor>` first. |
 | `"Usage: ..."` / `"Detailed usage: ..."` | The device is showing you the correct syntax — read it and retry with the right arguments. |
 | Exit code 0 but no output | Report to the user; do not fabricate content. |
