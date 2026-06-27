@@ -48,9 +48,6 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 ARRAY_DEF_RE = re.compile(r"\bCommandEntry\s+(\w+)\s*\[\s*\]\s*[^=;{]*=\s*\{")
 SETTING_ARRAY_DEF_RE = re.compile(r"\bSettingEntry\s+(\w+)\s*\[\s*\]\s*[^=;{]*=\s*\{")
 MODULE_TABLE_RE = re.compile(r"\bgCommandModules\s*\[\s*\]\s*=\s*\{")
-MODULE_ROW_RE = re.compile(
-    r'\{\s*"([^"]+)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\w+)\s*,\s*\w+\s*,\s*([^,]+?)\s*,'
-)
 STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
 NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_\-]*$")
 SETTINGS_SUFFIX_RE = re.compile(r"(Settings?|Setting)(Entry|Entries)$")
@@ -349,6 +346,11 @@ def collect(firmware: Path):
 
     for f in files:
         text = f.read_text(errors="replace")
+        # Firmware-specific macros that appear inside usage/help string literals.
+        # This is a text parser, not a compiler, so substitute with a readable
+        # placeholder. HW_GPIO_MAX_STR expands to the board's max GPIO number
+        # on-device (39 on classic ESP32 / 48 on ESP32-S3); show it board-agnostically.
+        text = text.replace("HW_GPIO_MAX_STR", '"N"')
 
         for m in ARRAY_DEF_RE.finditer(text):
             var = m.group(1)
@@ -398,11 +400,41 @@ def collect(firmware: Path):
     return modules, settings, warnings, stats
 
 
+def _brace_delta(s: str) -> int:
+    """Net change in brace depth across one line (string/comment aware).
+    Braces inside string literals (e.g. an overview containing `{a,b}`) are ignored."""
+    depth, i, n, in_str = 0, 0, len(s), None
+    while i < n:
+        c = s[i]
+        if in_str:
+            if c == "\\":
+                i += 2
+                continue
+            if c == in_str:
+                in_str = None
+            i += 1
+            continue
+        if c in "\"'":
+            in_str = c
+        elif c == "/" and i + 1 < n and s[i + 1] == "/":
+            break
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        i += 1
+    return depth
+
+
 def _parse_module_table(block, warnings):
+    """Brace-aware parse of gCommandModules[]. Rows may span many lines because the
+    long_description (field 3) is a wrapped, multi-literal C string. Preprocessor
+    guards (#if/#endif) sit between rows at depth 0 and are tracked into each row."""
     modules, cond = [], []
+    buf, depth = "", 0
     for raw in block.splitlines():
         line = raw.strip()
-        if line.startswith("#"):
+        if depth == 0 and not buf and line.startswith("#"):
             pp = line[1:].strip().split(None, 1)
             kw = pp[0] if pp else ""
             arg = pp[1].strip() if len(pp) > 1 else ""
@@ -415,18 +447,41 @@ def _parse_module_table(block, warnings):
             elif kw == "endif" and cond:
                 cond.pop()
             continue
-        if not line.startswith("{"):
-            continue
-        row = MODULE_ROW_RE.match(line)
-        if not row:
-            warnings.append(f"unparsed module row: {line[:60]}")
-            continue
-        name, desc, array, flags = row.groups()
-        modules.append({
-            "name": name, "description": _unescape(desc), "array": array,
-            "flags": flags.strip(), "guard": " && ".join(c for c in cond if c) or None,
-        })
+        if depth == 0 and not buf and not line.startswith("{"):
+            continue  # blank / comment line between rows
+        buf += raw + "\n"
+        depth += _brace_delta(raw)
+        if depth <= 0 and buf.strip():
+            _emit_module_row(buf.strip(), list(cond), modules, warnings)
+            buf, depth = "", 0
+    if buf.strip():
+        warnings.append(f"unparsed trailing module text: {buf.strip()[:60]}")
     return modules
+
+
+def _emit_module_row(row_text, cond, modules, warnings):
+    """Parse one `{ name, description, long_description, array, count, flags, isConnected }`
+    row. Fields are split top-level so commas inside the wrapped overview don't fool us."""
+    lb, rb = row_text.find("{"), row_text.rfind("}")
+    if lb == -1 or rb == -1 or rb < lb:
+        warnings.append(f"unparsed module row: {row_text[:60]}")
+        return
+    f = _split_fields(row_text[lb + 1:rb])
+    if len(f) < 6:
+        warnings.append(f"module row has {len(f)} fields (<6): {row_text[:60]}")
+        return
+    name = _as_str(f[0])
+    if not name:
+        warnings.append(f"module row missing name: {row_text[:60]}")
+        return
+    modules.append({
+        "name": name,
+        "description": _as_str(f[1]) or "",
+        "long_description": _as_str(f[2]),  # None when the row leaves it nullptr
+        "array": f[3].strip(),
+        "flags": f[5].strip(),
+        "guard": " && ".join(c for c in cond if c) or None,
+    })
 
 
 def _join_settings(modules, settings, warnings):
@@ -508,6 +563,8 @@ def render_commands(modules, commit, stats):
     for m in modules:
         out += ["", f"### `{m['name']}` — {m['description']}", "",
                 "_Always compiled._" if not m["guard"] else f"_Requires `{m['guard']}`._", ""]
+        if m.get("long_description"):
+            out += [m["long_description"], ""]
         if not m["commands"]:
             out.append("_(no commands parsed)_")
             continue

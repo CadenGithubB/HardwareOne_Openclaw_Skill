@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — DO NOT EDIT BY HAND.
      Regenerate with: tools/sync_command_reference.py -->
 
-> Firmware commit `7e2a634` · 409 settings · 361 linked to commands
+> Firmware commit `f5fcc22` · 409 settings · 363 linked to commands
 
 Every persisted setting, grouped by area. Each setting is read/written by the CLI command shown (its `cmdKey`, else its key). Set a value with that command; persist with `savesettings`. Values marked **secret** are encrypted on disk and never echoed; **read-only** values are device-managed (e.g. counters).
 
@@ -320,11 +320,11 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Fuel gauge bus (reboot required)** (`fuelGaugeBus`) — setting · enum · default 0 (I2C1) · options 0=I2C1, 1=I2C2 · command `fuelgaugebus`
 - **GPS bus (reboot required)** (`gpsBus`) — setting · enum · default 0 (I2C1) · options 0=I2C1, 1=I2C2 · command `gpsbus`
 - **I2C2 Bus Enabled (reboot required)** (`i2c2BusEnabled`) — setting · bool · default off · command `i2c2busenabled`
-- **I2C2 SCL Pin (reboot required, -1=unavailable)** (`i2c2SclPin`) — setting · int -1–48 · default I2C2_SCL_PIN_DEFAULT · command `i2c2sclpin`
-- **I2C2 SDA Pin (reboot required, -1=unavailable)** (`i2c2SdaPin`) — setting · int -1–48 · default I2C2_SDA_PIN_DEFAULT · command `i2c2sdapin`
+- **I2C2 SCL Pin (reboot required, -1=unavailable)** (`i2c2SclPin`) — setting · int -1–HW_GPIO_MAX · default I2C2_SCL_PIN_DEFAULT · command `i2c2sclpin`
+- **I2C2 SDA Pin (reboot required, -1=unavailable)** (`i2c2SdaPin`) — setting · int -1–HW_GPIO_MAX · default I2C2_SDA_PIN_DEFAULT · command `i2c2sdapin`
 - **I2C1 Bus Enabled (reboot required)** (`i2cBusEnabled`) — setting · bool · default on · command `i2cbusenabled`
-- **I2C1 SCL Pin (reboot required)** (`i2cSclPin`) — setting · int 0–48 · default I2C_SCL_PIN_DEFAULT · command `i2csclpin`
-- **I2C1 SDA Pin (reboot required)** (`i2cSdaPin`) — setting · int 0–48 · default I2C_SDA_PIN_DEFAULT · command `i2csdapin`
+- **I2C1 SCL Pin (reboot required)** (`i2cSclPin`) — setting · int 0–HW_GPIO_MAX · default I2C_SCL_PIN_DEFAULT · command `i2csclpin`
+- **I2C1 SDA Pin (reboot required)** (`i2cSdaPin`) — setting · int 0–HW_GPIO_MAX · default I2C_SDA_PIN_DEFAULT · command `i2csdapin`
 - **IMU bus (reboot required)** (`imuBus`) — setting · enum · default 0 (I2C1) · options 0=I2C1, 1=I2C2 · command `imubus`
 - **Input device bus (reboot required)** (`inputBus`) — setting · enum · default 0 (I2C1) · options 0=I2C1, 1=I2C2 · command `inputbus`
 - **OLED bus (reboot required)** (`oledBus`) — setting · enum · default OLED_BUS_DEFAULT · options 0=I2C1, 1=I2C2 · command `oledbus`
@@ -355,7 +355,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### led
 
-- **Brightness** (`ledBrightness`) — setting · int 0–255 · default 100 · command `ledbrightness`
+- **Brightness** (`ledBrightness`) — setting · int 0–100 · default 100 · command `ledbrightness`
 - **Startup Color** (`ledStartupColor`) — setting · string · default "cyan" · command `ledstartupcolor`
 - **Startup Color 2** (`ledStartupColor2`) — setting · string · default "magenta" · command `ledstartupcolor2`
 - **Startup Duration (ms)** (`ledStartupDuration`) — setting · int 100–10000 · default 1000 · command `ledstartupduration`
@@ -479,9 +479,9 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 ### thermal
 
 - **Auto-start after boot** (`thermalAutoStart`) — setting · bool · default off · command `thermalautostart`
-- **Poll Interval (ms)** (`thermalDevicePollMs`) — setting · int 50–1000 · default 100 · command `thermaldevicepollms`
+- **Poll Interval (ms)** (`thermalDevicePollMs`) — setting · int 100–2000 · default 100 · command `thermaldevicepollms`
 - **EWMA Factor** (`thermalEWMAFactor`) — setting · float · default 0.2 · command `thermalewmafactor`
-- **I2C Clock (Hz)** (`thermalI2cClockHz`) — setting · int 100000–1000000 · default 800000 · command `thermalI2cClockHz` _(no distinct command)_
+- **I2C Clock (Hz)** (`thermalI2cClockHz`) — setting · int 100000–1000000 · default 400000 · command `thermali2cclockhz`
 - **Interp. Buffer** (`thermalInterpolationBufferSize`) — setting · int 1–10 · default 2 · command `thermalinterpolationbuffersize`
 - **Interpolation** (`thermalInterpolationEnabled`) — setting · bool · default on · command `thermalinterpolationenabled`
 - **Interp. Steps** (`thermalInterpolationSteps`) — setting · int 1–8 · default 5 · command `thermalinterpolationsteps`
@@ -495,7 +495,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Temporal Alpha** (`thermalTemporalAlpha`) — setting · float · default 0.5 · command `thermaltemporalalpha`
 - **Transition (ms)** (`thermalTransitionMs`) — setting · int 0–5000 · default 80 · command `thermaltransitionms`
 - **Upscale Factor** (`thermalUpscaleFactor`) — setting · int 1–4 · default 1 · command `thermalupscalefactor`
-- **Web Max FPS** (`thermalWebMaxFps`) — setting · int 1–30 · default 10 · command `thermalWebMaxFps` _(no distinct command)_
+- **Web Max FPS** (`thermalWebMaxFps`) — setting · int 1–30 · default 10 · command `thermalwebmaxfps`
 
 ### tof
 
