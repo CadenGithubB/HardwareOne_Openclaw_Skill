@@ -16,9 +16,12 @@
 #   HW1_CONNECT_TIMEOUT   TCP connect timeout, seconds (default 5) — fail fast if offline
 #   HW1_TIMEOUT           per-request cap, seconds (default 30; covers ~12s password hashing)
 #   HW1_TIMEOUT_LONG      cap for slow commands: llmgenerate/llmload (default 300)
-#   HW1_INSECURE=1        accept a self-signed TLS cert (curl -k) — trusted LAN only
-#   HW1_CACERT=/path.pem  verify TLS against this CA/cert (preferred over HW1_INSECURE)
+#   HW1_ALLOW_SELF_SIGNED=1  accept the device's self-signed TLS cert (curl -k) — trusted LAN only
+#                            (legacy alias: HW1_INSECURE=1)
+#   HW1_CACERT=/path.pem     verify TLS against this CA/cert (preferred over HW1_ALLOW_SELF_SIGNED)
 #   HW1_AUTH_PROBE        auth-gated path used to verify login (default /api/system)
+#   HW1_COOKIE_DIR        session/scheme cache dir (default /tmp/hw1); the gateway sets
+#                         this per device so multiple devices don't share a session
 
 set -euo pipefail
 
@@ -33,7 +36,7 @@ fi
 URL="${HW1_URL:-}"
 USER="${HW1_USER:-}"
 PASS="${HW1_PASS:-}"
-COOKIE_DIR="/tmp/hw1"
+COOKIE_DIR="${HW1_COOKIE_DIR:-/tmp/hw1}"
 COOKIE_FILE="$COOKIE_DIR/session.cookie"
 
 CONNECT_TIMEOUT="${HW1_CONNECT_TIMEOUT:-5}"
@@ -56,14 +59,14 @@ if [[ -z "${1:-}" ]]; then
 fi
 
 if [[ ! -d "$COOKIE_DIR" ]]; then
-    mkdir -m 700 "$COOKIE_DIR"
+    mkdir -p -m 700 "$COOKIE_DIR"
 fi
 
 # --- Shared curl options (timeouts + TLS), applied to EVERY request ---
 CURL_BASE=( -sS --connect-timeout "$CONNECT_TIMEOUT" )
 if [[ -n "${HW1_CACERT:-}" ]]; then
     CURL_BASE+=( --cacert "${HW1_CACERT}" )
-elif [[ "${HW1_INSECURE:-0}" == "1" ]]; then
+elif [[ "${HW1_ALLOW_SELF_SIGNED:-${HW1_INSECURE:-0}}" == "1" ]]; then
     CURL_BASE+=( --insecure )
 fi
 
@@ -81,7 +84,7 @@ report_curl_failure() {
         7)  echo "Error: connection refused at '$URL'. Is the device on and its HTTP server started?" >&2 ;;
         28) echo "Error: timed out reaching '$URL'. Device unreachable or slow (raise HW1_TIMEOUT if the command is expected to be slow)." >&2 ;;
         35|51|58|59|60|77|83)
-            echo "Error: TLS/certificate problem with '$URL'. For a self-signed cert set HW1_INSECURE=1 (trusted LAN only) or HW1_CACERT=/path/to/cert.pem." >&2 ;;
+            echo "Error: TLS/certificate problem with '$URL'. For a self-signed cert set HW1_ALLOW_SELF_SIGNED=1 (trusted LAN only) or HW1_CACERT=/path/to/cert.pem." >&2 ;;
         *)  echo "Error: could not reach '$URL' (curl exit $1)." >&2 ;;
     esac
 }
@@ -235,7 +238,8 @@ do_cli() {
 }
 
 # --- Main ---
-resolve_base || exit 1
+# exit 7 = device unreachable at the transport layer (device down) so the gateway can fail over.
+resolve_base || exit 7
 
 case "${1:-}" in
     --ping)

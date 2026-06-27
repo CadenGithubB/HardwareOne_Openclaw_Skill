@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — DO NOT EDIT BY HAND.
      Regenerate with: tools/sync_command_reference.py -->
 
-> Firmware commit `f5fcc22` · 409 settings · 363 linked to commands
+> Firmware commit `2d466cf` · 409 settings · 363 linked to commands
 
 Every persisted setting, grouped by area. Each setting is read/written by the CLI command shown (its `cmdKey`, else its key). Set a value with that command; persist with `savesettings`. Values marked **secret** are encrypted on disk and never echoed; **read-only** values are device-managed (e.g. counters).
 

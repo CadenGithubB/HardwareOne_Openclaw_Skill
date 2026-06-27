@@ -1,6 +1,8 @@
 # Sensitive credentials
 .env
 !.env.template
+hardwareone.devices.json
+!hardwareone.devices.json.template
 
 # OS files
 .DS_Store
@@ -22,6 +24,9 @@ Thumbs.db
 
 # Brought-over reference docs — operational/security notes + recovered copies; not for publishing
 openclawdocs/
+
+# Copied-in reference only (the agent's notes skill); never publish
+notes/
 
 # Claude Code local config
 .claude/

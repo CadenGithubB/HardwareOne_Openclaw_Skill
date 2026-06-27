@@ -1,0 +1,24 @@
+{
+  "_help": [
+    "HardwareOne multi-device registry. Copy to ~/.openclaw/hardwareone.devices.json (host-only, chmod 600).",
+    "When this file exists the gateway uses it; otherwise it falls back to a single device in hardwareone.env.",
+    "Device names are free identifiers (NOT rooms) - a device's room/location/purpose lives on the device",
+    "(espnowroom / espnowzone / espnowtags) and in the agent's memory note, never here.",
+    "role: master | worker | backup. Exactly one DIRECT master = the HTTP entry point the agent talks to,",
+    "and the jumping-off point for the mesh. A 'backup' (also direct) becomes the default if the master is down.",
+    "Credentials: each DIRECT device needs its own url + user + pass. If ALL your devices truly share one",
+    "login you can move user/pass up into 'defaults'; otherwise keep them per device (as below).",
+    "via: \"mesh\" marks a device with NO direct HTTP - it is reached only through the master's espnowremote.",
+    "A mesh device needs no url/user/pass here; it shows up as access:mesh, and a direct call to it is",
+    "rejected with a pointer to relay through the master.",
+    "allowSelfSigned: true accepts a device's self-signed HTTPS cert (trusted LAN); or pin 'cacert'.",
+    "Advanced optional per-device fields: connectTimeout, timeout, timeoutLong, authProbe (seconds / path).",
+    "Lines in this _help array are ignored by the parser - delete them or keep them, your choice."
+  ],
+  "default": "red",
+  "defaults": { "allowSelfSigned": true },
+  "devices": {
+    "red":  { "url": "192.168.1.42", "role": "master", "user": "admin", "pass": "changeme" },
+    "gold": { "role": "worker", "via": "mesh" }
+  }
+}
