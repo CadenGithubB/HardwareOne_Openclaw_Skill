@@ -3,6 +3,31 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] — 2026-06-28
+
+Documentation: agent guidance for the ESP-NOW **bonding** subsystem (a paired
+master/worker), which the skill barely covered before — the agent only knew `bondstatus`.
+
+### Added
+- `SKILL.md` bonding section: the 1:1 master/worker model and how it differs from the
+  mesh — bonding syncs the worker's capability/manifest/settings and streams its sensors,
+  but running a command on the worker still goes through `espnowremote`. Covers the
+  `bondconnect` → `bondstatus` → `bondresync` flow and reading the *peer's* data via
+  `bondshowremotemanifest` / `GET /api/bond/*` instead of the local `bondshowcap` /
+  `bondshowmanifest` (which report your own device).
+- `SKILL.md` secure-pairing note: `espnowpairsecure` + `espnowsetpassphrase` set up the
+  encrypted session bonding requires (status via `espnowencstatus` / `espnowsessions`).
+
+### Fixed
+- `SKILL.md` listed `bondstatus` as the mesh-topology check; corrected to
+  `espnowmeshstatus` / `espnowmeshtopo`.
+
+### Changed
+- Example device names/IPs in `hardwareone.devices.json.template` are neutral placeholders
+  (`node-a` / `node-b`).
+- Repo tidy: dropped internal design/working notes from `docs/` (the design lives in the
+  code, this changelog, and `SKILL.md`); `.gitignore` now excludes build `*.zip` bundles.
+
 ## [1.3.0] — 2026-06-27
 
 Multi-device support: one agent can now control several HardwareOne devices — a
