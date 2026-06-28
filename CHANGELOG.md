@@ -3,6 +3,34 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-06-28
+
+CLI-only: the agent now does everything through `hardwareone_cli`. The `hardwareone_get`
+HTTP-API tool is gone — it proved flaky in practice (the agent guessed wrong `/api/*`
+paths and floundered), and the firmware's CLI command registry is the complete,
+self-describing command bus behind every transport, so the web API was only a narrower,
+staler subset.
+
+### Removed
+- The `hardwareone_get` tool — from the plugin (tool, manifest contract, and the
+  `deploy.sh` allowlist, which now prunes any stale entry on redeploy), `SKILL.md`, and
+  `references/api-reference.md`. The agent's toolset is now `hardwareone_ping` /
+  `hardwareone_cli` / `hardwareone_devices`.
+
+### Changed
+- `SKILL.md`: the CLI is stated as the device's entire interface (no `/api/...` paths);
+  bonding reads the peer with `bondshowremotemanifest`; and a fix for the `help`
+  module-vs-command trap (`battery` is a module — the command is `battery status`).
+- `references/api-reference.md`: retitled "CLI Reference"; the HTTP API section and the
+  HTTP-status error table are removed.
+- Deploy is now authoritative, so a redeploy can't leave stale files behind: `deploy.sh`
+  does a clean plugin install (`rm -rf` the destination first), and `install.sh` syncs the
+  skill with `rsync --delete` (your host-side `.env` is excluded, so it's preserved).
+
+### Added
+- The deploy bundle's `install.sh` + `INSTALL.md` are now tracked in the repo (`deploy/`),
+  so the bundle is reproducible from source instead of living only in the zip.
+
 ## [1.3.1] — 2026-06-28
 
 Documentation: agent guidance for the ESP-NOW **bonding** subsystem (a paired
