@@ -13,7 +13,8 @@ Agent (sandbox, no network) ──tool call──▶ Gateway plugin (host) ─�
 ```
 
 - **Plugin** (`plugin/`) — registers three tools on the OpenClaw gateway:
-  `hardwareone_ping`, `hardwareone_cli`, `hardwareone_get`.
+  `hardwareone_ping`, `hardwareone_cli`, `hardwareone_devices`. The CLI is the device's
+  complete interface — there is no HTTP-API tool.
 - **Skill** (`SKILL.md`, `references/`) — tells the agent how to use those tools and
   which commands exist.
 - **Wrapper** (`scripts/hw1.sh`) — what the plugin shells out to on the host; handles
@@ -45,7 +46,7 @@ gateway tools:
 | Path | What |
 |------|------|
 | `SKILL.md` | The agent-facing skill (tool usage, workflow, error recovery). |
-| `references/api-reference.md` | Curated guide: HTTP endpoints, the feature `[ON]/[OFF]/[N/C]` model, error handling. |
+| `references/api-reference.md` | Curated guide: the feature `[ON]/[OFF]/[N/C]` model, error handling, common commands. |
 | `references/cli-commands.generated.md` | Exhaustive command catalog (generated from firmware). |
 | `references/settings.generated.md` | Every configurable setting (generated from firmware). |
 | `scripts/hw1.sh` | Host-side HTTP wrapper the plugin calls. |
@@ -117,7 +118,7 @@ Credentials live only on the host and are never mounted into the sandbox.
 
 - The agent's sandbox has **no network** (`NetworkMode: none`); the three gateway tools
   are the only path to the device — the same pattern OpenClaw uses for web search.
-- Tool inputs are length-capped, and `hardwareone_get` is restricted to `/api/...` paths.
+- Tool inputs are length-capped and validated — control characters rejected, device names restricted to a safe charset.
 - The plugin `spawn`s the wrapper with an argv array — **never a shell** — so command
   arguments can't be shell-interpreted on the host.
 - Device credentials stay host-side; nothing privileged crosses the sandbox boundary.

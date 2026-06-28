@@ -1,8 +1,8 @@
-# HardwareOne API and CLI Reference
+# HardwareOne CLI Reference
 
 **This is a custom embedded CLI on an ESP32 microcontroller, NOT a Linux/Unix shell.**
 Standard commands like `ls`, `cd`, `cat`, `dir`, `ps`, `rm`, `cp`, `mv`, `df`, `mount`, `grep`, `find`, `echo`, `sysinfo`, `ifconfig`, `ping` DO NOT EXIST.
-The complete, always-current command list is in `{baseDir}/references/cli-commands.generated.md` (auto-generated from firmware). The sections in *this* file are a curated guide to the most-used commands plus the HTTP API, feature model, and error handling — consult the generated catalog for exhaustive coverage. If a command is in neither file, it does not exist on this device.
+The complete, always-current command list is in `{baseDir}/references/cli-commands.generated.md` (auto-generated from firmware). The sections in *this* file are a curated guide to the most-used commands, the feature model, and error handling — consult the generated catalog for exhaustive coverage. If a command is in neither file, it does not exist on this device. Everything is done through CLI commands (the `hardwareone_cli` tool); there is no HTTP API to call.
 
 ## Quick Index — every command grouped by module
 
@@ -76,38 +76,9 @@ The complete, always-current command list is in `{baseDir}/references/cli-comman
 
 **Always available** (no feature flag): status, uptime, time, temperature, voltage, memsample, memreport, taskstats, fsusage, features, help, login, logout
 
-## HTTP API Endpoints
-
-Fetch these with the `hardwareone_get` tool — e.g. `hardwareone_get { "path": "/api/sensors" }`.
-
-**Note:** API endpoints for features showing `[N/C]` will return 404. Only endpoints for compiled features are registered.
-
-### Health and System
-- `GET /api/ping` -- Health check
-- `GET /api/system` -- System status (CPU, memory, uptime)
-
-### Sensors
-- `GET /api/sensors` -- All current sensor data
-- `GET /api/sensors/status` -- Sensor operational status (supports SSE)
-- `GET /api/sensors/remote` -- Sensor data from bonded worker devices
-
-### Files
-- `GET /api/files/list?path=/` -- List directory contents
-- `GET /api/files/read?path=/file.txt` -- Read file content
-
-### ESP-NOW and Bonding
-- `GET /api/espnow/metadata` -- Peer metadata
-- `GET /api/espnow/remotecap` -- Remote device capabilities
-- `GET /api/bond/status` -- Bonding status (master/worker roles)
-
-### Other
-- `GET /api/automations` -- List automations
-
----
-
 ## CLI Command Reference
 
-Run any command below via the `hardwareone_cli` tool — e.g. `hardwareone_cli { "command": "status" }`. The gateway POSTs it to `/api/cli` for you.
+Run any command below via the `hardwareone_cli` tool — e.g. `hardwareone_cli { "command": "status" }`.
 
 > **For complete coverage of all ~820 commands** (with argument syntax and, for config commands, value ranges/defaults), read `{baseDir}/references/cli-commands.generated.md`; for all configurable settings, `{baseDir}/references/settings.generated.md`. Both are generated from the firmware by `tools/sync_command_reference.py`. The curated sections below cover the common commands in more depth.
 
@@ -669,20 +640,7 @@ Flags: `debughttp`, `debugwifi`, `debugespnow`, `debugespnowcore`, `debugespnowm
 
 ## Error Handling
 
-### HTTP JSON Errors
-
-Format: `{"success": false, "error": "<message>"}` with HTTP status codes.
-
-| Code | Meaning | Action |
-|------|---------|--------|
-| 401  | Auth required/expired | Re-authenticate and retry (the gateway does this automatically) |
-| 403  | Insufficient permissions | Inform user admin access is needed |
-| 429  | Rate limited | Wait `retry_after_ms` then retry once (the gateway handles this) |
-| 400  | Bad request | Check command syntax |
-| 404  | Not found | Resource does not exist |
-| 500  | Server error | Report to user |
-
-### Authentication Error Codes
+### Authentication Errors
 
 JSON response `error` field values:
 - `auth_required` -- session expired or missing

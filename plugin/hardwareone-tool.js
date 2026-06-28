@@ -17,7 +17,6 @@ const TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
 
 const SAFE_CLI_RE = /^[\x20-\x7E]+$/;
-const SAFE_PATH_RE = /^\/api\/[A-Za-z0-9_\-\/.?=&%]*$/;
 const SAFE_DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const UNREACHABLE_RE = /could not reach|connection refused|timed out|resolve host|TLS\/certificate/i;
 
@@ -325,33 +324,6 @@ export function createHardwareoneTools() {
         }
         if (!validDeviceParam(device)) return errorResult("device must be a short name (letters, digits, _ or -)");
         return runOnDevice(device, [command]);
-      },
-    },
-    {
-      name: "hardwareone_get",
-      label: "HardwareOne GET",
-      description:
-        "HTTP GET a HardwareOne API endpoint (e.g. '/api/sensors') on the default master, or on the " +
-        "device named by `device`.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "API path, must start with /api/" },
-          device: DEVICE_PARAM,
-        },
-        required: ["path"],
-      },
-      async execute(_toolCallId, params) {
-        const apiPath = params && params.path;
-        const device = params && params.device;
-        if (typeof apiPath !== "string" || apiPath.length === 0 || apiPath.length > 512) {
-          return errorResult("path must be a non-empty string under 512 chars");
-        }
-        if (!SAFE_PATH_RE.test(apiPath)) {
-          return errorResult("path must start with /api/ and use URL-safe characters only");
-        }
-        if (!validDeviceParam(device)) return errorResult("device must be a short name (letters, digits, _ or -)");
-        return runOnDevice(device, ["--get", apiPath]);
       },
     },
     {

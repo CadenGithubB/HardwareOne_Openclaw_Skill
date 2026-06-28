@@ -5,7 +5,6 @@
     "tools": [
       "hardwareone_ping",
       "hardwareone_cli",
-      "hardwareone_get",
       "hardwareone_devices"
     ]
   },

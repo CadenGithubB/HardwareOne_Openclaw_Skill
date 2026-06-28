@@ -1,7 +1,8 @@
 # HardwareOne OpenClaw plugin
 
-Registers three gateway tools — `hardwareone_ping`, `hardwareone_cli`, `hardwareone_get` —
-that the sandboxed agent calls. Each shells out (via `spawn`, never a shell) to the
+Registers three gateway tools — `hardwareone_ping`, `hardwareone_cli`, `hardwareone_devices` —
+that the sandboxed agent calls. The CLI is the device's complete interface; there is no
+HTTP-API tool (the agent does everything through `hardwareone_cli`). Each shells out (via `spawn`, never a shell) to the
 host-side `hw1.sh` wrapper, which talks to the ESP32. The sandbox itself gains no network.
 
 ## Files
@@ -25,7 +26,7 @@ wires the tool allowlists in `~/.openclaw/openclaw.json`, flushes the jiti cache
 
 ## Security boundary
 
-- **Input:** each tool validates length (≤ 512 chars); `hardwareone_get` requires a `/api/...` path.
+- **Input:** each tool validates length (≤ 512 chars), rejects control characters, and restricts device names to a safe charset.
 - **Process:** `spawn` with an argv array — never a shell, no `sh -c`. Command arguments can't be shell-interpreted on the host.
 - **Runtime:** per-call timeout; stdout capped at 64 KB, stderr at 4 KB.
 - **Credentials:** live only in the skill's host-side `.env`; they never enter the sandbox.

@@ -38,7 +38,8 @@ if [[ ! -d "$OC_DIST" ]]; then
   exit 1
 fi
 
-echo "== 1. copy vendored plugin -> dist/extensions/hardwareone =="
+echo "== 1. copy vendored plugin -> dist/extensions/hardwareone (clean install) =="
+rm -rf "$DEST"   # clean install: drop any files a previous version left behind so nothing stale survives
 mkdir -p "$DEST"
 for f in $PLUGIN_FILES; do
   cp "$SCRIPT_DIR/$f" "$DEST/$f"
@@ -61,8 +62,8 @@ if [[ -f "$CONFIG" ]] && command -v jq >/dev/null 2>&1; then
   jq '
     .plugins.allow = ((.plugins.allow // []) + ["hardwareone"] | unique) |
     .plugins.entries.hardwareone = {"enabled": true} |
-    .tools.alsoAllow = ((.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_get","hardwareone_devices"] | unique) |
-    .tools.sandbox.tools.alsoAllow = ((.tools.sandbox.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_get","hardwareone_devices"] | unique)
+    .tools.alsoAllow = (((.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_devices"] | unique) - ["hardwareone_get"]) |
+    .tools.sandbox.tools.alsoAllow = (((.tools.sandbox.tools.alsoAllow // []) + ["hardwareone_ping","hardwareone_cli","hardwareone_devices"] | unique) - ["hardwareone_get"])
   ' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
   echo "   ensured plugins.allow + plugins.entries.hardwareone + tool allowlists (config backed up)"
 else

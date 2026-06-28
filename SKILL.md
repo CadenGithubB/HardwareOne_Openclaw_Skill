@@ -21,19 +21,20 @@ An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C 
 | Tool | Parameters | What it does |
 | ---- | ---------- | ------------ |
 | `hardwareone_ping` | `{ "device"?: "<name>" }` | Health-check a device (the default master, or the named one). Returns hostname, MAC, firmware version. |
-| `hardwareone_cli`  | `{ "command": "<cmd>", "device"?: "<name>" }` | Run a device CLI command — e.g. `{"command": "thermalread"}`. |
-| `hardwareone_get`  | `{ "path": "/api/...", "device"?: "<name>" }` | HTTP GET an API endpoint. Path must start with `/api/`. |
+| `hardwareone_cli`  | `{ "command": "<cmd>", "device"?: "<name>" }` | Run a device CLI command — e.g. `{"command": "thermalread"}`. This is how you do everything. |
 | `hardwareone_devices` | `{ "probe"?: true }` | List configured devices (names + roles). `probe` also reports which are online. |
 
 **Do not** attempt `curl`, `wget`, `python`, `node`, `/dev/tcp`, or to execute `hw1.sh` yourself — you have no network and all of those fail. Do not read or edit `scripts/`; those files run host-side and are not used by you.
 
 **Argument limits:** arguments may use any normal printable text — including `=`, `;`, `@`, `{ }`, `"` (needed for automations, passwords, and JSON). Only control characters (newline/tab) are rejected; output is capped at ~64 KB per call.
 
+**The CLI is the device's entire interface.** Every capability — status, sensors, configuration, files, mesh, bonding — is a CLI command you run with `hardwareone_cli`. There is **no HTTP API for you to call** and no `/api/...` paths to fetch: the command registry is the single, complete, self-describing surface that backs every transport, and any web API is a narrower, staler subset of it. If you don't know the command, **find it** — search the catalog or run `help` — never reach for a web endpoint.
+
 ## Multiple devices
 
 There may be one or more HardwareOne devices. Use `hardwareone_devices` to see them (names + roles); **more than one means multi-device mode.**
 
-- **Targeting.** Commands with no `device` hit the **master** (the default). Target a specific one by passing `device: "<name>"` to `hardwareone_cli` / `hardwareone_get` / `hardwareone_ping`. You never see or need IPs or credentials — only names.
+- **Targeting.** Commands with no `device` hit the **master** (the default). Target a specific one by passing `device: "<name>"` to `hardwareone_cli` / `hardwareone_ping`. You never see or need IPs or credentials — only names.
 - **Roles.** `master` = the default and the mesh relay; `backup` = takes over automatically if the master is unreachable; the rest are `worker`s. The role from `hardwareone_devices` is the configured hint — the device's *live* mesh role is `espnowmeshrole` / `espnowmeshstatus`; if they disagree, note the drift.
 - **Capabilities differ per device.** Run `features` on each device you use — don't assume one device's catalog applies to another (different sensors, different firmware).
 - **What each device *is* lives in your memory, not here.** At session start, find your topology note with `note_search hardwareone` (locations, roles, sensors, which peers are mesh-only); read it, and update it — durable facts only, no IPs or live status — when devices change.
@@ -48,12 +49,12 @@ There may be one or more HardwareOne devices. Use `hardwareone_devices` to see t
 When you need a command — or one didn't do what you expected — work in this order:
 
 1. **Search the catalog by keyword.** Map the task to a word and look it up: peer metadata → search `meta` (you'll find `espnowrequestmeta`); a sensor → its name; a setting → its area. The command you need is almost always already there.
-2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments.
+2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments. The top-level `help` lists **modules** (categories like `battery`, `system`, `power`), **not** commands — a module name is not runnable on its own, so don't run `battery` or `system`; run `help <module>` to see its real commands (e.g. `help battery` → `battery status`).
 3. Then pass the exact command name to `hardwareone_cli`.
 
 **Never web-search** for HardwareOne commands, errors, or behavior — this is a private device with no public documentation, so a web search returns nothing useful and only wastes turns. The catalog and the device's own `help`/`Usage:` output are the only sources of truth. If a command isn't in the catalog, it does not exist — don't invent or guess one.
 
-**When something fails, do NOT guess again — go to `help`.** If a command errors, returns the wrong thing, or you're unsure what to run next, do **not** fire off another command or `/api/...` path at random. Stop, run `help <module>` on the device (or re-search the catalog), find the *right* command, then retry. Two failed or off-target attempts in a row means you're guessing — switch to `help`; a third guess just wastes turns.
+**When something fails, do NOT guess again — go to `help`.** If a command errors, returns the wrong thing, or you're unsure what to run next, do **not** fire off another command or `/api/...` path at random. Stop, run `help <module>` on the device (or re-search the catalog), find the *right* command, then retry. Two failed or off-target attempts in a row means you're guessing — switch to `help`; a third guess just wastes turns. **Never** fall back to fetching an `/api/...` path — there is no API surface for you; the answer is always another CLI command.
 
 ### Argument conventions
 
@@ -84,13 +85,13 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 
 - **Mesh health & peers:** `espnowmeshstatus` (heartbeats/ACKs), `espnowlist` (paired peers), `espnowdevices` (all mesh devices, master). Full topology is `espnowmeshtopo` (async — see below).
 - **Encrypted peers.** A secure mesh pairs with `espnowpairsecure <mac> <name>` under a shared `espnowsetpassphrase`; that runs an async key exchange — confirm it with `espnowencstatus` / `espnowsessions`. Plain `espnowpair` is unencrypted. **Bonding (below) requires a secure session.**
-- Remote sensor readings: `hardwareone_get`, path `/api/sensors/remote`.
+- Remote (bonded-worker) sensor readings land on the master — read them with `espnowsensorstatus`.
 - **Many peer commands are asynchronous** — they return `OK` on *delivery*; the real result arrives later, and **the retriever depends on the command** (each command's catalog/`help` line now names it — read that, don't assume):
   - `espnowremote` / `espnowfetch` / `espnowbrowse` / `espnowroomcmd` / `espnowtagcmd` → the message buffer: `espnowmessages json [<peer-mac>]`.
   - `espnowrequestmeta <peer>` → updates the **device cache**; read the peer's name/room/zone/tags with **`espnowdevices`** (NOT `espnowmessages` — that's the mistake to avoid). `espnowlist` is just names/MACs, not metadata.
-  - `espnowmeshtopo` → `espnowtoporesults`; bonding `*request*` commands → `bondshowremotemanifest` / the `/api/bond/*` endpoints.
+  - `espnowmeshtopo` → `espnowtoporesults`; bonding `*request*` commands → `bondshowremotemanifest` (see §6).
 - **Some sends are fire-and-forget** (`espnowsend`, `espnowbroadcast`, `espnowsessionsend`, `espnowtimesync`, `imagesend`): delivery only — **no reply comes back, so don't wait for one.**
-- In every case the result is **not** at a guessed `/api/...` path — check the command's catalog note for where it actually lands.
+- In every case the result lands in a **specific retriever command** — check the command's catalog/`help` note for which one; don't assume.
 - **Moving files between devices:**
   - `espnowsendfile <peer> "<path>"` — push a local file TO a peer.
   - `espnowfetch <peer> <user> <pass> "<path>"` — pull a peer's file to local storage (auto-renamed on a name clash, e.g. `battery.csv.1`).
@@ -104,21 +105,17 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 
 Workflow:
 1. **Pair:** `bondconnect <peer>` — async; it completes when the peer's heartbeat arrives. Watch **`bondstatus`** (role, peer online/offline, and the sync flags for cap/manifest/settings). If sync stalls or looks stale, force it with `bondresync`.
-2. **Read the peer's data — use the REMOTE viewers, never the local ones.** `bondshowcap` and `bondshowmanifest` show **your own** device (the footgun to avoid). The *peer's*:
-   - manifest → `bondshowremotemanifest`
-   - capability → `hardwareone_get` `/api/bond/status`
-   - settings → `hardwareone_get` `/api/bond/settings`
-   - schema → `hardwareone_get` `/api/bond/settings/schema`
-3. **Stream the worker's sensors:** on the worker, `bondstream <sensor> on`; read them on the master with `espnowsensorstatus` or `hardwareone_get` `/api/sensors/remote`.
+2. **Read the peer's manifest with the REMOTE viewer.** `bondshowremotemanifest` shows the bonded peer's apps + commands. Do **not** use `bondshowcap` / `bondshowmanifest` — those report **your own** device (the footgun to avoid).
+3. **Stream the worker's sensors:** on the worker, `bondstream <sensor> on`; read them on the master with `espnowsensorstatus`.
 
-When unsure about a bond, read **`bondstatus`** — it's the single source of truth. Don't guess a `/api/...` path.
+When unsure about a bond, read **`bondstatus`** — it's the single source of truth.
 
 ### Common recipes
 
 - **Read a sensor:** `openthermal` → `thermalread` → `closethermal`.
 - **Change & save a setting:** `ledbrightness 80`, then `savesettings`.
 - **Daily automation:** `automationadd name=morning type=atTime time=07:00 command=status` (time is device-local; set `tzoffsetminutes` first if needed).
-- **Get structured data:** `hardwareone_get` with `/api/sensors` returns JSON instead of CLI text.
+- **Battery / power:** `battery status` (voltage + charge %); `power` for power mode. (`battery` alone is a module name, not a command — the command is `battery status`.)
 
 ## Error recovery
 
@@ -135,7 +132,7 @@ When unsure about a bond, read **`bondstatus`** — it's the single source of tr
 
 - `references/cli-commands.generated.md` — **exhaustive** command catalog (firmware-generated). The authoritative list; read before guessing.
 - `references/settings.generated.md` — every configurable setting, grouped by area, with the command that reads/writes it.
-- `references/api-reference.md` — curated guide: HTTP API endpoints, the feature `[ON]/[OFF]/[N/C]` model, error handling, and common commands in more depth.
+- `references/api-reference.md` — curated guide: the feature `[ON]/[OFF]/[N/C]` model, error handling, and the common commands in more depth.
 
 ## What you cannot read or use from this sandbox
 
