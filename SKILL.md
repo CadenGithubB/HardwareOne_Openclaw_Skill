@@ -82,7 +82,8 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 
 ### 5. ESP-NOW mesh — talking to peers
 
-- Check topology with `hardwareone_cli`, command `bondstatus`.
+- **Mesh health & peers:** `espnowmeshstatus` (heartbeats/ACKs), `espnowlist` (paired peers), `espnowdevices` (all mesh devices, master). Full topology is `espnowmeshtopo` (async — see below).
+- **Encrypted peers.** A secure mesh pairs with `espnowpairsecure <mac> <name>` under a shared `espnowsetpassphrase`; that runs an async key exchange — confirm it with `espnowencstatus` / `espnowsessions`. Plain `espnowpair` is unencrypted. **Bonding (below) requires a secure session.**
 - Remote sensor readings: `hardwareone_get`, path `/api/sensors/remote`.
 - **Many peer commands are asynchronous** — they return `OK` on *delivery*; the real result arrives later, and **the retriever depends on the command** (each command's catalog/`help` line now names it — read that, don't assume):
   - `espnowremote` / `espnowfetch` / `espnowbrowse` / `espnowroomcmd` / `espnowtagcmd` → the message buffer: `espnowmessages json [<peer-mac>]`.
@@ -94,6 +95,23 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
   - `espnowsendfile <peer> "<path>"` — push a local file TO a peer.
   - `espnowfetch <peer> <user> <pass> "<path>"` — pull a peer's file to local storage (auto-renamed on a name clash, e.g. `battery.csv.1`).
   - To make a peer send *its own* file to you, run sendfile **on the peer** via remote exec: `espnowremote <peer> <user> <pass> espnowsendfile <your-name-or-mac> "/battery.csv"` (get your own name/MAC from `espnowstatus`).
+
+### 6. Bonding — a paired master/worker device
+
+**Bonding is a 1:1 pairing, not the mesh.** Two devices pair exclusively — a **master** (display/gamepad) and a **worker** (compute/network); the role is auto-assigned by MAC when you run `bondconnect`, so you don't pick it. The master continuously syncs the worker's capability, manifest, settings, and schema, and can stream the worker's sensors. It needs a **secure session** first (see *Encrypted peers* above) and the firmware built with bonded mode — if bond commands report they're unavailable, that device wasn't built for it and you can't change that.
+
+**Bonding does not make the worker's commands locally runnable.** "Shared registries" only means the master *caches* the worker's manifest to list what it offers. To actually run a command on the worker, use **`espnowremote <peer> <user> <pass> <cmd>`** (the mesh path) — there is no bond "exec" for you.
+
+Workflow:
+1. **Pair:** `bondconnect <peer>` — async; it completes when the peer's heartbeat arrives. Watch **`bondstatus`** (role, peer online/offline, and the sync flags for cap/manifest/settings). If sync stalls or looks stale, force it with `bondresync`.
+2. **Read the peer's data — use the REMOTE viewers, never the local ones.** `bondshowcap` and `bondshowmanifest` show **your own** device (the footgun to avoid). The *peer's*:
+   - manifest → `bondshowremotemanifest`
+   - capability → `hardwareone_get` `/api/bond/status`
+   - settings → `hardwareone_get` `/api/bond/settings`
+   - schema → `hardwareone_get` `/api/bond/settings/schema`
+3. **Stream the worker's sensors:** on the worker, `bondstream <sensor> on`; read them on the master with `espnowsensorstatus` or `hardwareone_get` `/api/sensors/remote`.
+
+When unsure about a bond, read **`bondstatus`** — it's the single source of truth. Don't guess a `/api/...` path.
 
 ### Common recipes
 

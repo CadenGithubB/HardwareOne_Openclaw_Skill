@@ -15,10 +15,10 @@
     "Advanced optional per-device fields: connectTimeout, timeout, timeoutLong, authProbe (seconds / path).",
     "Lines in this _help array are ignored by the parser - delete them or keep them, your choice."
   ],
-  "default": "red",
+  "default": "node-a",
   "defaults": { "allowSelfSigned": true },
   "devices": {
-    "red":  { "url": "192.168.1.42", "role": "master", "user": "admin", "pass": "changeme" },
-    "gold": { "role": "worker", "via": "mesh" }
+    "node-a": { "url": "192.168.1.42", "role": "master", "user": "admin", "pass": "changeme" },
+    "node-b": { "role": "worker", "via": "mesh" }
   }
 }
