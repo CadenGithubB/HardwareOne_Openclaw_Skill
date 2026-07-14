@@ -1,7 +1,7 @@
 #!/bin/bash
 # Deploy / restore the HardwareOne OpenClaw plugin.
 #
-# RUN THIS ON THE OPENCLAW HOST (the Mac Studio), as the `openclaw` user — NOT on
+# RUN THIS ON THE OPENCLAW HOST, as the `openclaw` user — NOT on
 # the laptop. It is safe to re-run, and is the thing to run after every
 # `npm update -g openclaw`, which wipes the plugin out of dist/extensions/.
 #

@@ -1,6 +1,6 @@
 #!/bin/bash
 # HardwareOne deploy-bundle installer.
-# RUN ON THE OPENCLAW HOST (the Mac Studio), as the `openclaw` user, from inside
+# RUN ON THE OPENCLAW HOST, as the `openclaw` user, from inside
 # this folder. Safe to re-run.
 
 set -euo pipefail

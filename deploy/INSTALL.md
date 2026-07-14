@@ -1,6 +1,6 @@
 # HardwareOne — deploy bundle
 
-Drag this whole folder onto the OpenClaw host (the Mac Studio), then run
+Drag this whole folder onto the OpenClaw host, then run
 `./install.sh` from inside it as the `openclaw` user. That's it.
 
 It updates two things in two places:
