@@ -3,7 +3,7 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.5.0] — 2026-07-14
 
 ### Added
 - **Two co-equal direct HTTP endpoints.** Configure several `role: master` direct devices in
