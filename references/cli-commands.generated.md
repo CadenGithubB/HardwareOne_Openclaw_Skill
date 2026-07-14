@@ -4,7 +4,7 @@
      Regenerate with: tools/sync_command_reference.py
      Source of truth: firmware gCommandModules[] + SettingEntry tables. -->
 
-> Firmware commit `2d466cf` · 824 commands · 43 modules
+> Firmware commit `71bcd2c` · 841 commands · 44 modules
 
 Generated directly from the firmware command tables, so it always matches the build it came from. **Feature gating still applies:** a module whose compile guard is not defined is absent entirely — run `features` on the device for live `[ON]`/`[OFF]`/`[N/C]` state. Admin-only commands are marked *(admin)*. Commands backed by a stored setting show their value type / range / default / options; see [`settings.generated.md`](settings.generated.md) for the full configuration view.
 
@@ -16,7 +16,7 @@ Generated directly from the firmware command tables, so it always matches the bu
 | `system` | always | 21 |
 | `wifi` | `ENABLE_WIFI` | 19 |
 | `espnow` | `ENABLE_ESPNOW` | 113 |
-| `mqtt` | `ENABLE_MQTT` | 28 |
+| `mqtt` | `ENABLE_MQTT` | 27 |
 | `bluetooth` | `ENABLE_BLUETOOTH` | 21 |
 | `filesystem` | always | 10 |
 | `sd` | `defined(SD_CS_PIN)` | 5 |
@@ -55,7 +55,8 @@ Generated directly from the firmware command tables, so it always matches the bu
 | `even_g2` | `ENABLE_BLUETOOTH && ENABLE_G2_GLASSES` | 46 |
 | `even_r1` | `ENABLE_BLUETOOTH && ENABLE_G2_GLASSES` | 6 |
 | `llm` | `ENABLE_ONDEVICE_LLM` | 27 |
-| **Total** | | **824** |
+| `settingsedit` | always | 18 |
+| **Total** | | **841** |
 
 ## Commands by module
 
@@ -76,23 +77,23 @@ _Always compiled._
 
 The system module holds core device commands that do not belong to any peripheral. Status and inspection: status (WiFi, filesystem, memory summary), uptime, time (uptime plus NTP wall-clock if synced), temperature and voltage (ESP32 internal die temp and supply rail), taskstats/perftop (FreeRTOS task and live loop/CPU profiling), fsusage, and the memory tools memsample (snapshot, with memsample track on|off|reset|status for allocation tracking) and memreport. Control and power: reboot, cpufreq [80|160|240] to read or set CPU clock, lightsleep [seconds] for ESP32 light sleep, and wait <ms>/sleep <ms> to pause command-script execution. timeset sets the clock manually. broadcast <message> pushes a line of text to all connected output interfaces, and factoryreset deletes the user-accounts file so the first-boot setup wizard re-runs on next reboot while deliberately preserving WiFi credentials and other settings. Most mutating commands (timeset, cpufreq, reboot, factoryreset, broadcast, lightsleep) require admin.
 
-- `status` — Show system status (WiFi, FS, memory).
-- `uptime` — Show device uptime.
-- `time` — Show device time (uptime + NTP if synced).
+- `status` — Show system status (WiFi, FS, memory). (add 'json' for JSON output)
+- `uptime` — Show device uptime. (add 'json' for JSON output)
+- `time` — Show device time (uptime + NTP if synced). (add 'json' for JSON output)
 - `timeset` *(admin)* — Set time manually: timeset YYYY-MM-DD HH:MM:SS or <unix_timestamp>. · `timeset <YYYY-MM-DD HH:MM:SS>|<unix_timestamp>`
 - `memsample` — Memory snapshot with component requirements. Use 'memsample track [on|off|reset|status]' for allocation tracking. · `memsample [track <on|off|reset|status>]`
-- `memreport` — Comprehensive memory report (Task Manager style).
-- `fsusage` — Show filesystem usage.
+- `memreport` — Comprehensive memory report (Task Manager style). (add 'json' for JSON output)
+- `fsusage` — Show filesystem usage. (add 'json' for JSON output)
 - `testencryption` *(admin)* — Test WiFi password encryption (admin only).
 - `testpassword` *(admin)* — Test user password hashing (admin only).
-- `temperature` — Read ESP32 internal temperature.
-- `voltage` — Read supply voltage.
-- `cpufreq` *(admin)* — Get/set CPU frequency. · `cpufreq [80|160|240]`
+- `temperature` — Read ESP32 internal temperature. (add 'json' for JSON output)
+- `voltage` — Estimate power draw from active subsystems (not a real voltage measurement; use batterystatus for measured volts). (add 'json' for JSON output)
+- `cpufreq` *(admin)* — Get/set CPU frequency (admin). · `cpufreq [80|160|240]`
 - `taskstats` — Detailed task statistics.
 - `perftop` — Live performance snapshot: loop laps/s, period, per-section timing, worst stalls + live task CPU%.
 - `reboot` *(admin)* — Reboot the system.
 - `factoryreset` *(admin)* — Wipe user accounts and reboot to re-run setup wizard. · `factoryreset (no args, confirmation required) Deletes /system/users/users.json so the first-time setup wizard runs on next boot. WiFi credentials and other settings are preserved.`
-- `broadcast` *(admin)* — Send message to all or specific user. · `broadcast <message>`
+- `broadcast` *(admin)* — Send a message to all connected output interfaces. · `broadcast <message>`
 - `pendinglist` *(admin)* — List pending user requests.
 - `wait` — Delay execution for N milliseconds: wait <ms>. · `wait <ms> (1..60000)`
 - `sleep` — Alias for wait: sleep <ms>. · `sleep <ms> (1..60000)`
@@ -104,23 +105,23 @@ _Requires `ENABLE_WIFI`._
 
 The WiFi subsystem manages station-mode network connections plus the network services that ride on top of them: NTP time sync and the on-device HTTP/HTTPS server. Saved networks are stored as a prioritized list (wifilist, wifiadd, wifirm, wifipromote) and persist to flash; openwifi connects by best-priority (default) or by --index <N>, and a failed indexed attempt auto-rolls back to the previously connected network. Note two distinct disconnects: closewifi tears down the link AND stops the HTTP server and web output to free heap, while wifidisconnect (drop) leaves the radio and web server up so you can move to another network. wifiscan lists nearby APs, ntpsync/ntpstatus handle clock sync, and openhttp/closehttp/httpstatus run the web server (compiled in only when the HTTP server is enabled). certinfo and certgen (admin-only) manage the self-signed HTTPS certificate.
 
-- `wifiread` — Read current WiFi connection info.
-- `wifistatus` — Show current WiFi connection info.
-- `wifilist` — List saved WiFi networks.
+- `wifiread` — Read current WiFi connection info. (add 'json' for JSON output)
+- `wifistatus` — Show current WiFi connection info. (add 'json' for JSON output)
+- `wifilist` — List saved WiFi networks. (add 'json' for JSON output)
 - `wifiadd` *(admin)* — Add WiFi network: <ssid> <pass> [priority] [hidden] · `wifiadd <ssid> <pass> [priority] [hidden0|1]`
 - `wifirm` *(admin)* — Remove WiFi network: <ssid> · `wifirm <ssid>`
-- `wifipromote` *(admin)* — Promote WiFi to top priority: <ssid> · `wifipromote <ssid>`
+- `wifipromote` *(admin)* — Promote WiFi to top priority: <ssid> [newPriority] · `wifipromote <ssid> [newPriority]`
 - `openwifi` — Connect to WiFi: [--best | --index <N>] (default: best) · `openwifi [--best | --index <1..N>]`
 - `closewifi` — Disconnect from WiFi (also stops HTTP server + web output to free heap).
 - `wifidisconnect` — Disconnect from the current network but keep the radio on (HTTP/web stay up).
-- `wifiscan` — Scan for available WiFi networks.
-- `wifigettxpower` — Set WiFi TX power: <dBm> (alias of wifitxpower) · `wifigettxpower <dBm> (sets TX power; clamps to ~2..21 dBm)`
+- `wifiscan` — Scan for available WiFi networks. (add 'json' for JSON output)
+- `wifigettxpower` *(admin)* — Set WiFi TX power: <dBm> (alias of wifitxpower; admin) · `wifigettxpower <dBm> (sets TX power; clamps to ~2..21 dBm)`
 - `ntpsync` — Sync time with NTP server.
 - `ntpstatus` — Show NTP configuration and sync state.
 - `openhttp` — Start HTTP server.
 - `closehttp` — Stop HTTP server.
-- `httpread` — Read HTTP server status.
-- `httpstatus` — Show HTTP server status.
+- `httpread` — Read HTTP server status. (add 'json' for JSON output)
+- `httpstatus` — Show HTTP server status. (add 'json' for JSON output)
 - `certinfo` — Show HTTPS certificate details.
 - `certgen` *(admin)* — Generate self-signed HTTPS certificate: [rsa] (default: ECDSA P-256) · `certgen [rsa] Default: ECDSA P-256 (~1s). Use 'certgen rsa' for RSA-2048 (~30-60s).`
 
@@ -140,14 +141,14 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowsaturationreset` — Clear the saturation rolling window (use before a stress test).
 - `espnowidentity` — Show long-term Ed25519 identity (MAC, pub key, createdAtSec, regenCount).
 - `espnowregenidentity` *(admin)* — Regenerate Ed25519 identity. Requires '--confirm-wipe-all-bonds'. · `espnowregenidentity --confirm-wipe-all-bonds`
-- `espnowkeyex` *(admin)* — Initiate KEY_EX handshake with a peer (Phase 3.3 — runs alongside legacy pairing). (async - handshake completes later; check espnowsessions) · `espnowkeyex <mac> [<mesh>] Returns OK when KEY_EX_HELLO is sent; the handshake completes asynchronously - inspect with 'espnowsessions' / 'espnowencstatus'.`
+- `espnowkeyex` *(admin)* — Initiate KEY_EX handshake with a peer (runs alongside legacy pairing). (async - handshake completes later; check espnowsessions) · `espnowkeyex <name_or_mac> [<mesh>] Returns OK when KEY_EX_HELLO is sent; the handshake completes asynchronously - inspect with 'espnowsessions' / 'espnowencstatus'.`
 - `espnowprobe` *(admin)* — Reachability probe via KEY_EX. Synchronous, bounded timeout. Reports alive+mesh+firmware in one shot (no plaintext on the wire). · `espnowprobe <name_or_mac> [<timeoutMs (50-5000, default 500)>] [<mesh>]`
-- `espnowsessionopen` *(admin)* — Initiate SESSION handshake (Phase 3.4 — requires prior espnowkeyex). (async - session goes ACTIVE later; check espnowsessions) · `espnowsessionopen <mac> [<mesh>] Returns OK when SESSION_OPEN is sent; the session becomes ACTIVE when CONFIRM arrives - run 'espnowsessions'.`
+- `espnowsessionopen` *(admin)* — Initiate SESSION handshake (requires prior espnowkeyex). (async - session goes ACTIVE later; check espnowsessions) · `espnowsessionopen <name_or_mac> [<mesh>] Returns OK when SESSION_OPEN is sent; the session becomes ACTIVE when CONFIRM arrives - run 'espnowsessions'.`
 - `espnowsessions` — Show in-RAM session state (peer, sessionId, dir, age, counters).
-- `espnowsessionsend` *(admin)* — Send AEAD-wrapped TEXT through active session (Phase 3.5a demo). (async send; delivery only, no reply) · `espnowsessionsend <mac> <message> Returns OK on delivery; no application reply comes back.`
-- `espnowrekey` *(admin)* — Force immediate SESSION_REKEY for a peer (Phase 3.6 — manual trigger). (async - completes later; check espnowsessions) · `espnowrekey <mac> Returns OK when REKEY is sent; new keys derive when the peer's REKEY arrives - verify with 'espnowsessions'.`
-- `espnowsubs` — Phase 5: list peers + their event-subscription bitmaps (what they want from us).
-- `espnowrequestevents` *(admin)* — Phase 5: ask a peer to send US only events in <bitmask>. Updates state ON THE PEER. (async - changes peer state, no reply; verify with espnowsubs on the peer) · `espnowrequestevents <mac> <bitmask> Returns OK on delivery; this updates the PEER's subscription (no confirmation returns) - run 'espnowsubs' on that peer to verify.`
+- `espnowsessionsend` *(admin)* — DIAGNOSTIC: send an AEAD-encrypted CHAT message over an active session (exercises the session-crypto path). NOT executed on the peer and returns no reply - to RUN a command use 'espnowremote'. · `espnowsessionsend <name_or_mac> <message> Delivers an encrypted CHAT message (lands in the peer's espnowmessages). It is NOT command execution and no reply comes back. To run a command on the peer: espnowremote <target> <target-user> <target-pass> <command>.`
+- `espnowrekey` *(admin)* — Force immediate SESSION_REKEY for a peer (manual trigger). (async - completes later; check espnowsessions) · `espnowrekey <name_or_mac> Returns OK when REKEY is sent; new keys derive when the peer's REKEY arrives - verify with 'espnowsessions'.`
+- `espnowsubs` — List peers + their event-subscription bitmaps (what they want from us).
+- `espnowrequestevents` *(admin)* — Ask a peer to send US only events in <bitmask>. Updates state ON THE PEER. (async - changes peer state, no reply; verify with espnowsubs on the peer) · `espnowrequestevents <name_or_mac> <bitmask> Returns OK on delivery; this updates the PEER's subscription (no confirmation returns) - run 'espnowsubs' on that peer to verify.`
 - `openespnow` *(admin)* — Initialize ESP-NOW communication.
 - `closeespnow` *(admin)* — Deinitialize ESP-NOW and free resources.
 - `espnowpair` *(admin)* — Pair ESP-NOW device: 'espnowpair <mac> <name> [mesh]'. (synchronous; local registry add, no remote handshake) · `espnowpair <mac> <name> [mesh]`
@@ -157,7 +158,7 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowmessages` — Buffered message history as JSON: 'espnowmessages json [sinceSeq] [mac]' — async results of espnowremote/browse/fetch. · `espnowmessages [json] [<sinceSeq>] [<AA:BB:CC:DD:EE:FF>]`
 - `espnowmeshstatus` — Show mesh peer health (heartbeats & ACKs).
 - `espnowmeshmetrics` — Show mesh routing metrics (forwards, path stats, drops).
-- `espnowmeshes` *(admin)* — Manage multi-mesh slots: 'espnowmeshes [list|add|remove|enable|setdefault|rename] ...'. · `espnowmeshes list espnowmeshes add <label> (then set passphrase via 'espnowsetpassphrase <label> <pw>') espnowmeshes remove <label> (alias: disable) espnowmeshes enable <label> espnowmeshes setdefault <label> espnowmeshes rename <oldLabel> <newLabel>`
+- `espnowmeshes` *(admin)* — Manage multi-mesh slots: 'espnowmeshes [list|add|remove|enable|setdefault|rename|setpassphrase] ...'. · `espnowmeshes list espnowmeshes add <label> (then set passphrase via 'espnowsetpassphrase <label> <pw>') espnowmeshes remove <label> (alias: disable) espnowmeshes enable <label> espnowmeshes setdefault <label> espnowmeshes setpassphrase <label> <passphrase> espnowmeshes rename <oldLabel> <newLabel>`
 - `espnowmode` *(admin)* — Get/set ESP-NOW mode: 'espnowmode [direct|mesh]'. · `espnowmode [direct|mesh]` _(setting · bool · default off)_
 - `espnowmeshttl` — Get/set mesh TTL: 'espnowmeshttl [1-10|adaptive]'. · `espnowmeshttl [<1..10>|adaptive]` _(setting · int 1–10 · default 3)_
 - `espnowsetname` *(admin)* — Get/set device name: 'espnowsetname [name]'. · `espnowsetname [<name>] (<=20 chars; letters, numbers, - and _ only)` _(setting · string · default (empty))_
@@ -166,9 +167,9 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowmeshmaster` *(admin)* — Get/set master MAC: 'espnowmeshmaster [MAC]'. · `espnowmeshmaster [<AA:BB:CC:DD:EE:FF>]` _(setting · string · default (empty))_
 - `espnowmeshbackup` *(admin)* — Get/set backup MAC: 'espnowmeshbackup [MAC]'. · `espnowmeshbackup [<AA:BB:CC:DD:EE:FF>]` _(setting · string · default (empty))_
 - `espnowbackupenable` *(admin)* — Enable/disable backup master feature: 'espnowbackupenable [on|off]'. · `espnowbackupenable [on|off]` _(setting · bool · default off)_
-- `espnowmeshtopo` — Discover mesh topology (master only). (async - read results with espnowtoporesults)
+- `espnowmeshtopo` — Discover mesh topology (run on the master; role not enforced). (async - read results with espnowtoporesults)
 - `espnowtoporesults` — Get topology discovery results.
-- `espnowtimesync` — Broadcast NTP time to mesh (master only). (async broadcast; delivery only, no reply)
+- `espnowtimesync` — Broadcast NTP time to mesh (intended for the master; role not enforced). (async broadcast; delivery only, no reply)
 - `espnowtimestatus` — Show time synchronization status.
 - `espnowmeshsave` — Manually save mesh peer topology to filesystem.
 - `espnowroom` — Get/set device room: 'espnowroom [name]'. · `espnowroom [Kitchen|Bedroom|...] espnowroom clear` _(setting · string · default (empty))_
@@ -178,16 +179,16 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowstationary` — Get/set stationary flag: 'espnowstationary [0|1]'. · `espnowstationary [on|off|0|1]` _(setting · bool · default off)_
 - `espnowdeviceinfo` — Show all local device metadata.
 - `espnowdevices` — List all mesh devices with room/zone/tags/status: espnowdevices [json].
-- `espnowrooms` — List rooms and their devices (master).
+- `espnowrooms` — List rooms and their devices (aggregated from this node's cached peer metadata).
 - `espnowfind` — Find devices by name, room, or tag: 'espnowfind <query>'. · `espnowfind <query>`
-- `espnowroomcmd` *(admin)* — Run command on all devices in a room. (async - replies via espnowmessages json) · `espnowroomcmd <room> <user> <pass> <command> Returns OK on dispatch; each device's reply arrives later in 'espnowmessages json'.`
-- `espnowtagcmd` *(admin)* — Run command on all devices with a tag. (async - replies via espnowmessages json) · `espnowtagcmd <tag> <user> <pass> <command> Returns OK on dispatch; each device's reply arrives later in 'espnowmessages json'.`
-- `espnowsend` — Send message (auto-routes via mesh if enabled): 'espnowsend <name_or_mac> <message>'. (async send; delivery only, no reply) · `espnowsend <name_or_mac> <message> Returns OK on delivery; one-way message, no result comes back.`
-- `espnowbroadcast` — Broadcast message: 'espnowbroadcast <message>'. (async send; delivery only, no reply) · `espnowbroadcast <message> Returns the count sent; one-way broadcast, no per-device reply.`
+- `espnowroomcmd` *(admin)* — Run command on all devices in a room; user/pass must be valid on EACH target device. (async - replies via espnowmessages json) · `espnowroomcmd <room> <target-user> <target-pass> <command> Credentials are checked ON EACH target device, not this one. Returns OK on dispatch; each device's reply arrives later in 'espnowmessages json'.`
+- `espnowtagcmd` *(admin)* — Run command on all devices with a tag; user/pass must be valid on EACH target device. (async - replies via espnowmessages json) · `espnowtagcmd <tag> <target-user> <target-pass> <command> Credentials are checked ON EACH target device, not this one. Returns OK on dispatch; each device's reply arrives later in 'espnowmessages json'.`
+- `espnowsend` — Send message (auto-routes via mesh if enabled): 'espnowsend [json] <name_or_mac> <message>'. Requires ESP-NOW encryption enabled. (async send; delivery only, no reply) · `espnowsend [json] <name_or_mac> <message> Requires ESP-NOW encryption (set a mesh passphrase first); plaintext send was removed. Leading 'json' flag returns {schema,ok,msgId} for delivery-status polling. Returns OK on delivery; one-way message, no result comes back.`
+- `espnowbroadcast` — Broadcast message: 'espnowbroadcast <message>'. (async send; delivery only, no reply) · `espnowbroadcast <message> (single frame, <= 218 bytes; longer text is NOT fragmented and fails silently) Returns whether the single broadcast frame was transmitted to all peers, NOT a per-device delivery count; no per-device reply.`
 - `espnowsendfile` — Send file: 'espnowsendfile <name_or_mac> "<filepath>"'. (synchronous local send; does not confirm peer accepted) · `espnowsendfile <name_or_mac> "<filepath>" Blocks until the file is sent; 'success' means locally transmitted, not that the receiver stored it.`
-- `espnowbrowse` — Browse remote files: 'espnowbrowse <name_or_mac> <user> <pass> ["path"]'. (async - result via espnowmessages json) · `espnowbrowse <target> <username> <password> ["path"] Returns OK on delivery; the remote listing arrives later - read with 'espnowmessages json' (match the reqId).`
-- `espnowfetch` — Fetch remote file: 'espnowfetch <name_or_mac> <user> <pass> "<path>"'. (async - status via espnowmessages json; file saved on this device) · `espnowfetch <target> <username> <password> "<path>" Returns OK on delivery; status lands in 'espnowmessages json'; the fetched file is written to this device's filesystem.`
-- `espnowremote` — Execute remote command: 'espnowremote <name_or_mac> <user> <pass> <cmd>'. (async - result via espnowmessages json) · `espnowremote <target> <username> <password> <command> Returns OK on delivery; the remote command output arrives later - read with 'espnowmessages json' (match the reqId).`
+- `espnowbrowse` — Browse a peer's files; user/pass are an account ON THE TARGET: 'espnowbrowse <target> <target-user> <target-pass> ["path"]'. (async - result via espnowmessages json) · `espnowbrowse <target> <target-user> <target-pass> ["path"] Credentials are verified ON THE TARGET device, not this one. Returns OK on delivery; the remote listing arrives later - read with 'espnowmessages json' (match the reqId).`
+- `espnowfetch` — Fetch a file from a peer; user/pass are an account ON THE TARGET: 'espnowfetch <target> <target-user> <target-pass> "<path>"'. (async - status via espnowmessages json; file saved on this device) · `espnowfetch <target> <target-user> <target-pass> "<path>" Credentials are verified ON THE TARGET device, not this one. Returns OK on delivery; status lands in 'espnowmessages json'; the fetched file is written to this device's filesystem.`
+- `espnowremote` — Execute a command on a peer: 'espnowremote <target> <target-user> <target-pass> <cmd>'. user/pass are an account ON THE TARGET (verified there), not this device. (async - result via espnowmessages json) · `espnowremote <target> <target-user> <target-pass> <command> <target-user>/<target-pass> are credentials ON THE TARGET device, not this one. Async: returns a reqId on delivery; read the output later with 'espnowmessages json 0 <target-mac>' (match the reqId).`
 - `openstream` *(admin)* — Start streaming all output to ESP-NOW caller (admin, remote only).
 - `closestream` *(admin)* — Stop streaming output to ESP-NOW device (admin).
 - `espnowworker` — Configure worker status reporting: 'espnowworker [show|on|off|interval <ms>|fields <list>]'. · `espnowworker [show|on|off|interval <ms>|fields <heap,rssi,thermal,imu>]`
@@ -195,11 +196,11 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `espnowsensorstatus` — Show remote sensor cache (master) or worker streaming status (worker).
 - `espnowsensorbroadcast` — Enable/disable all sensor ESP-NOW communication: 'espnowsensorbroadcast <on|off>'. · `espnowsensorbroadcast [on|off]`
 - `espnowusersync` *(admin)* — Enable/disable user credential sync: 'espnowusersync [on|off]'. · `espnowusersync [on|off]` _(setting · bool · default off)_
-- `espnowrequestmeta` — Request metadata from peer: 'espnowrequestmeta <name_or_mac>'. (async - updates cache; view with espnowdevices/espnowdeviceinfo) · `espnowrequestmeta <name_or_mac> Returns OK on delivery; the peer's name/room/zone/tags arrive later and update the local cache shown by 'espnowdevices' and 'espnowdeviceinfo'.`
+- `espnowrequestmeta` — Request metadata from peer: 'espnowrequestmeta <name_or_mac>'. (async - updates cache; view with espnowdevices) · `espnowrequestmeta <name_or_mac> Returns OK on delivery; the peer's name/room/zone/tags arrive later and update the local peer cache shown by 'espnowdevices' / 'espnowrooms' / 'espnowfind'.`
 - `bondconnect` — Connect to bonded peer device: 'bondconnect <mac_or_name>'. (async - bond establishes when peer is seen; watch bondstatus) · `bondconnect <mac_or_name> Returns immediately; the bond completes when the peer appears via heartbeat - watch 'bondstatus'.`
 - `bonddisconnect` — Disconnect from bonded peer device.
 - `bondstatus` — Show bond mode status and configuration.
-- `bondrole` — Set bond mode role: 'bondrole <master|worker>'. · `bondrole <master|worker>` _(setting · enum · default 0 (Worker (compute/network)) · options 0=Worker (compute/network), 1=Master (display/gamepad))_
+- `bondrole` — Get/set bond mode role: 'bondrole [master|worker]' (no arg shows current role). · `bondrole [master|worker] (no arg shows current role)` _(setting · enum · default 0 (Worker (compute/network)) · options 0=Worker (compute/network), 1=Master (display/gamepad))_
 - `bondshowcap` — Show local device capability summary.
 - `bondrequestcap` — Request capability summary from bonded peer. (async - remote cap via GET /api/bond/status; note bondshowcap shows LOCAL cap)
 - `bondshowmanifest` — Show local device manifest (UI apps + CLI commands).
@@ -208,11 +209,11 @@ ESP-NOW links HardwareOne devices directly over the WiFi radio with no router or
 - `bondrequestschema` — Request settings schema from bonded peer. (async - cached; read via GET /api/bond/settings/schema)
 - `bondresync` — Force re-sync of bond state (cap+manifest+settings+schema). Use when UI is stuck on 'Establishing Bond' or peer state looks stale. (async - results populate as they arrive) · `bondresync [--cap|--manifest|--settings|--schema|--all] Returns OK on dispatch; results arrive over time - view via 'bondshowremotemanifest' and GET /api/bond/status, /api/bond/settings, /api/bond/settings/schema.`
 - `bondshowremotemanifest` — Show cached remote manifest(s): 'bondshowremotemanifest [fwHash]'. · `bondshowremotemanifest [<fwHash>]`
-- `bondstream` — Stream sensor data to bonded master (worker only): 'bondstream <sensor> <on|off>'. (local toggle; streamed data lands on the master's espnowsensorstatus) · `bondstream <sensor> <on|off> bondstream (show status) Local on/off toggle; the worker streams to the bonded master, viewable there via 'espnowsensorstatus' / GET /api/sensors/remote.`
-- `bondtestsensor` — Test v3 sensor data transmission: 'bondtestsensor [sensor_type]'. (async - frame appears on the master via espnowsensorstatus) · `bondtestsensor [thermal|tof|imu|gps|gamepad|fmradio] Returns OK on send; the test frame appears on the bonded master's remote-sensor cache ('espnowsensorstatus' / GET /api/sensors/remote).`
+- `bondstream` — Toggle bond sensor streaming (works on both roles): 'bondstream <sensor> <on|off>'. WORKER streams its sensor to the bonded master; MASTER commands the bonded worker to start/stop. (local toggle; data lands on the master's espnowsensorstatus) · `bondstream <sensor> <on|off> bondstream (show status) On a WORKER: streams this device's sensor to the bonded master. On a MASTER: tells the bonded worker to start/stop that sensor. Streamed data is viewable on the master via 'espnowsensorstatus' / GET /api/sensors/remote.`
+- `bondtestsensor` — Test v3 sensor data transmission (worker only - a master cannot send sensor data): 'bondtestsensor [sensor_type]'. (async - frame appears on the master via espnowsensorstatus) · `bondtestsensor [thermal|tof|imu|gps|input|fmradio|rtc|presence] (worker only) Returns OK on send; the test frame appears on the bonded master's remote-sensor cache ('espnowsensorstatus' / GET /api/sensors/remote).`
 - `espnowsetpassphrase` *(admin)* — Set encryption passphrase on a mesh: 'espnowsetpassphrase <mesh> <phrase>'. · `espnowsetpassphrase <mesh> <passphrase> espnowsetpassphrase <mesh> clear`
 - `espnowencstatus` *(admin)* — Show ESP-NOW encryption status and key fingerprint.
-- `espnowpairsecure` *(admin)* — Pair device with encryption: 'espnowpairsecure <mac> <name> [mesh]'. (local pair is synchronous; secure channel completes async - see espnowsessions) · `espnowpairsecure <mac_address> <device_name> [mesh] The device is added synchronously; KEY_EX then runs asynchronously (~100ms) so the encrypted channel becomes usable shortly after - inspect with 'espnowsessions' / 'espnowencstatus'.`
+- `espnowpairsecure` *(admin)* — Pair device with encryption: 'espnowpairsecure <mac> <name> [mesh]'. (local pair is synchronous; secure channel completes async - see espnowsessions) · `espnowpairsecure <mac_address> <device_name> [mesh] Requires a mesh passphrase first - run 'espnowsetpassphrase <mesh> <passphrase>'. The device is added synchronously; KEY_EX then runs asynchronously (~100ms) so the encrypted channel becomes usable shortly after - inspect with 'espnowsessions' / 'espnowencstatus'.`
 - `teststreams` — Test topology stream management functions.
 - `testconcurrent` — Test concurrent topology streams (simulated).
 - `testcleanup` — Test cleanup of stale topology streams.
@@ -250,11 +251,10 @@ _Requires `ENABLE_MQTT`._
 
 The MQTT subsystem connects the device to a broker, primarily to publish its sensor and system telemetry to Home Assistant via HA discovery. It is almost entirely configuration: broker host/port (mqttHost, mqttPort), credentials (mqttUser, mqttPassword), TLS mode and CA path, base/discovery topics, publish interval, and a long list of per-source publish toggles (mqttPublishThermal, mqttPublishIMU, and so on). These are persisted settings and most config commands are admin-only; after changing them, reconnect with closemqtt/openmqtt to apply to a live session. openmqtt and closemqtt start and stop the client, mqttstatus shows connection state, and mqttautostart controls whether it connects at boot. For inbound data, enable mqttSubscribeExternal with mqttSubscribeTopics; values received from those topics are cached and read back with mqttExternalSensors.
 
-- `debugmqtt` *(admin)* — MQTT debug logging [0|1] · `debugmqtt [0|1]` _(setting · bool · default off)_
 - `mqttclientenabled` *(admin)* — Enable/disable MQTT [0|1] · `mqttclientenabled [0|1]` _(setting · bool · default off)_
 - `openmqtt` — Start MQTT client
 - `closemqtt` — Stop MQTT client
-- `mqttstatus` — Show MQTT status
+- `mqttstatus` — Show MQTT status (add 'json' for JSON output)
 - `mqttautostart` *(admin)* — MQTT auto-start [0|1] · `mqttautostart [0|1]` _(setting · bool · default off)_
 - `mqttHost` *(admin)* — MQTT broker host [hostname] · `mqttHost [hostname]` _(setting · string · default (empty))_
 - `mqttPort` *(admin)* — MQTT broker port [port] · `mqttPort [port]` _(setting · int 1–65535 · default 1883)_
@@ -262,7 +262,7 @@ The MQTT subsystem connects the device to a broker, primarily to publish its sen
 - `mqttCACertPath` *(admin)* — CA cert path [path|clear] · `mqttCACertPath [path|clear]` _(setting · string · default "/system/certs/mqtt_ca.crt")_
 - `mqttSubscribeExternal` *(admin)* — External subscriptions [0|1] · `mqttSubscribeExternal [0|1]` _(setting · bool · default off)_
 - `mqttSubscribeTopics` *(admin)* — Subscribe topics [topics] · `mqttSubscribeTopics [topic1,topic2,...]` _(setting · string · default (empty))_
-- `mqttExternalSensors` — List external sensor data
+- `mqttExternalSensors` — List external sensor data (add 'json' for JSON output)
 - `mqttUser` *(admin)* — MQTT username [user|clear] · `mqttUser [username|clear]` _(setting · string · default (empty))_
 - `mqttPassword` *(admin)* — MQTT password [pass|clear] · `mqttPassword [password|clear]` _(setting · string · default (hidden) · secret)_
 - `mqttBaseTopic` *(admin)* — Base topic [topic|auto] · `mqttBaseTopic [topic|auto]` _(setting · string · default (empty))_
@@ -287,15 +287,15 @@ The Bluetooth subsystem runs the device BLE stack in one of two mutually exclusi
 
 - `openble` — Start Bluetooth LE and begin advertising.
 - `closeble` — Stop Bluetooth LE and deinitialize.
-- `bleread` — Read Bluetooth connection status.
-- `blestatus` — Show Bluetooth connection status.
-- `bleinfo` — Show BLE configuration and settings.
-- `blename` — Get/set BLE device name [name]. · `blename [name]`
+- `bleread` — Read Bluetooth connection status. (add 'json' for JSON output)
+- `blestatus` — Show Bluetooth connection status. (add 'json' for JSON output)
+- `bleinfo` — Show BLE configuration and settings. (add 'json' for JSON output)
+- `blename` — Get/set BLE device name [name]. · `blename [name]` _(setting · string · default "HardwareOne")_
 - `bletxpower` — Get/set BLE TX power [0-7]. · `bletxpower [0..7]` _(setting · int 0–7 · default 3)_
 - `bledisconnect` — Disconnect current BLE client.
 - `bleadv` — Start/stop/toggle BLE advertising [start|stop|toggle]. · `bleadv [start|stop|toggle]`
 - `blesend` — Send message to BLE client: <message>. · `blesend <message>`
-- `blestream` — Control streaming: <on|off|sensors|system>. · `blestream [on|off|sensors|system|events|interval] | interval <sensor_ms> <system_ms>`
+- `blestream` — Control streaming: <on|off|sensors|system|events|interval>. · `blestream [on|off|sensors|system|events|interval] | interval <sensor_ms> <system_ms>`
 - `bleevent` — Send event to BLE client: <event>. · `bleevent <message>`
 - `bleautostart` — Enable/disable BLE auto-start after boot [on|off]. · `bleautostart [on|off]` _(setting · bool · default on)_
 - `blerequireauth` *(admin)* — Enable/disable BLE authentication requirement [on|off]. · `blerequireauth [on|off]` _(setting · bool · default on)_
@@ -322,7 +322,7 @@ Manages files and directories on the device internal LittleFS flash. Browse with
 - `filewrite` *(admin)* — Write file chunk: "<path>" <offset> <b64chunk> [final] · `filewrite "<path>" <offset> <b64chunk> [final] - Sequential chunked write (app/BLE). offset 0 truncates/creates; later offsets must equal current size; 'final' runs post-save hooks.`
 - `filedelete` *(admin)* — Delete file: "<path>" [confirm] · `filedelete "<path>" [confirm]`
 - `filerename` *(admin)* — Rename file: "<oldpath>" "<newname>" · `filerename "<oldpath>" "<newname>"`
-- `logtier` — Show current log storage tier (LittleFS vs SD overflow). · `logtier - Report which tier logs are writing to and free space on each.`
+- `logtier` — Show current log storage tier (LittleFS vs SD overflow). · `logtier - Report which tier logs are writing to and free space on each. [json]`
 
 ### `sd` — SD card mount, format, and info
 
@@ -333,7 +333,7 @@ Controls the optional microSD card, which mounts at /sd and serves as overflow/b
 - `sdmount` — Mount SD card · `sdmount - Attempt to mount SD card at /sd`
 - `sdunmount` *(admin)* — Unmount SD card · `sdunmount - Safely unmount SD card`
 - `sdformat` — Format SD card as FAT32 · `sdformat confirm - Format SD card (WARNING: erases all data)`
-- `sdinfo` — Show SD card information · `sdinfo - Display SD card type, size, and usage`
+- `sdinfo` — Show SD card information · `sdinfo - Display SD card type, size, and usage [json]`
 - `sddiag` — SD card hardware diagnostics · `sddiag - Test raw SPI communication with SD card`
 
 ### `oled` — OLED display control and graphics
@@ -344,14 +344,14 @@ Drives the small SSD1306 OLED display: its lifecycle, the live screen contents, 
 
 - `openoled` — Start OLED display.
 - `closeoled` — Stop OLED display.
-- `oledread` — Read OLED display status.
+- `oledread` — Read OLED display status. (add 'json' for JSON output)
 - `oledstart` — Start OLED display.
 - `oledstop` — Stop OLED display.
 - `oledmode` — Set display mode: <mode> · `oledmode <menu|status|sensordata|sensorlist|thermal|network|mesh|gps|text|logo|anim|imuactions|fmradio|files|automations|espnow|memory|off> Example: oledmode memory Example: oledmode off`
 - `oledtext` — Set custom text: <message> · `oledtext <message>`
 - `oledanim` — Select animation: <name> or fps <1-60> · `oledanim <name> oledanim fps <1-60>`
 - `oledclear` — Clear OLED display.
-- `oledstatus` — Show OLED status.
+- `oledstatus` — Show OLED status. (add 'json' for JSON output)
 - `oledrequireauth` *(admin)* — OLED auth requirement: <0|1> · `oledrequireauth <0|1>` _(setting · bool · default on)_
 - `oledenabled` — Enable/disable OLED: <0|1> · `oledenabled <0|1>` _(setting · bool · default off)_
 - `oledbootmode` — OLED boot mode: <logo|status|sensors|thermal|network|mesh|off> · `oledbootmode <logo|status|sensors|thermal|network|mesh|off>` _(setting · enum · default "logo" · options logo, status, sensors, thermal, network, mesh, off)_
@@ -371,7 +371,7 @@ Controls the addressable RGB status LED (WS2812/NeoPixel). ledcolor <name> light
 
 - `ledcolor` — Set LED color: <color> · `ledcolor <red|green|blue|yellow|magenta|cyan|white|orange|purple|pink>`
 - `ledclear` — Turn off LED.
-- `ledeffect` — Run LED effect: <effect> · `ledeffect <fade|blink|pulse|strobe|off> [color] [color2] [duration 100..60000]`
+- `ledeffect` — Run LED effect: <effect> · `ledeffect <fade|pulse|blink|rainbow|strobe|off> [color] [color2] [duration 100..60000]`
 
 ### `led` — LED brightness and startup effects
 
@@ -382,8 +382,8 @@ Configures the board onboard single LED -- its brightness and the one-shot effec
 - `ledbrightness` — Set LED brightness 0-100. · `ledbrightness <0..100>` _(setting · int 0–100 · default 100)_
 - `ledstartupenabled` — Enable/disable LED startup effect [0|1]. · `ledstartupenabled <0|1>` _(setting · bool · default on)_
 - `ledstartupeffect` — Set LED startup effect [none|rainbow|pulse|fade|blink|strobe]. · `ledstartupeffect <none|rainbow|pulse|fade|blink|strobe>` _(setting · enum · default "rainbow" · options none, rainbow, pulse, fade, blink, strobe)_
-- `ledstartupcolor` — Set LED startup primary color. · `ledstartupcolor <red|green|blue|cyan|magenta|yellow|white|orange|purple>` _(setting · string · default "cyan")_
-- `ledstartupcolor2` — Set LED startup secondary color. · `ledstartupcolor2 <red|green|blue|cyan|magenta|yellow|white|orange|purple>` _(setting · string · default "magenta")_
+- `ledstartupcolor` — Set LED startup primary color (any of ~80 named colors or 'off'; unknown defaults to cyan). · `ledstartupcolor <color name|off> (any of ~80 named colors; unknown names default to cyan)` _(setting · string · default "cyan")_
+- `ledstartupcolor2` — Set LED startup secondary color (any of ~80 named colors or 'off'; unknown defaults to magenta). · `ledstartupcolor2 <color name|off> (any of ~80 named colors; unknown names default to magenta)` _(setting · string · default "magenta")_
 - `ledstartupduration` — Set LED startup effect duration in ms. · `ledstartupduration <100..10000>` _(setting · int 100–10000 · default 1000)_
 
 ### `servo` — PCA9685 servo motor control
@@ -395,7 +395,7 @@ The PCA9685 is a 16-channel I2C PWM driver used to control hobby servos (and gen
 - `servo` — Control servo motor: servo <channel> <angle>. · `servo <channel> <angle>`
 - `pwm` — Set PWM output: pwm <channel> <value> [freq]. · `pwm <channel> <value> [freq]`
 - `servoprofile` — Configure servo profile: servoprofile <ch> <minPulse> <maxPulse> <centerPulse> <name>. · `servoprofile <ch> <minPulse> <maxPulse> <centerPulse> <name>`
-- `servolist` — List configured servo profiles.
+- `servolist` — List configured servo profiles. (add 'json' for JSON output)
 - `servocalibrate` — Enter calibration mode: servocalibrate <channel>. · `servocalibrate <channel>`
 
 ### `thermal` — MLX90640 thermal camera (32x24)
@@ -406,7 +406,7 @@ The MLX90640 is a 32x24 (768-pixel) infrared thermal camera. openthermal starts 
 
 - `openthermal` — Start MLX90640 thermal sensor.
 - `closethermal` — Stop MLX90640 thermal sensor.
-- `thermalread` — Read thermal sensor data (min/max/avg).
+- `thermalread` — Read thermal frame; min/max/avg broadcast to output. (add 'json' for JSON output)
 - `thermalpollingms` *(admin)* — Thermal UI polling: <50..5000> · `thermalpollingms <50..5000>` _(setting · int 50–5000 · default 250)_
 - `thermalpalettedefault` *(admin)* — Thermal palette: <grayscale|iron|rainbow|hot|coolwarm> · `thermalpalettedefault <grayscale|iron|rainbow|hot|coolwarm>` _(setting · enum · default "grayscale" · options grayscale, iron, rainbow, hot, coolwarm)_
 - `thermalewmafactor` *(admin)* — Thermal EWMA factor: <0.0..1.0> · `thermalewmafactor <0.0..1.0>` _(setting · float · default 0.2)_
@@ -435,7 +435,7 @@ The VL53L4CX is a laser time-of-flight ranging sensor that measures distance to 
 
 - `opentof` — Start VL53L4CX ToF sensor.
 - `closetof` — Stop VL53L4CX ToF sensor.
-- `tofread` — Read ToF distance sensor.
+- `tofread` — Read ToF distance sensor. (add 'json' for JSON output)
 - `tofpollingms` *(admin)* — ToF UI polling: <50..5000> · `tofpollingms <50..5000>` _(setting · int 50–5000 · default 220)_
 - `tofstabilitythreshold` *(admin)* — ToF stability threshold: <0..50> · `tofstabilitythreshold <0..50>` _(setting · int 0–50 · default 3)_
 - `toftransitionms` *(admin)* — ToF transition time: <0..5000> · `toftransitionms <0..5000>` _(setting · int 0–5000 · default 200)_
@@ -451,7 +451,7 @@ The BNO055 is a 9-DOF inertial measurement unit providing fused absolute orienta
 
 - `openimu` — Start BNO055 IMU sensor.
 - `closeimu` — Stop BNO055 IMU sensor.
-- `imuread` — Read IMU sensor data.
+- `imuread` — Read IMU sensor data. (add 'json' for JSON output)
 - `imuactions` — Show IMU action detection state.
 - `imupollingms` *(admin)* — IMU UI polling interval: <50..2000> · `imupollingms <50..2000>` _(setting · int 50–2000 · default 200)_
 - `imuewmafactor` *(admin)* — IMU EWMA smoothing: <0.0..1.0> · `imuewmafactor <0.0..1.0>` _(setting · float · default 0.1)_
@@ -459,10 +459,10 @@ The BNO055 is a 9-DOF inertial measurement unit providing fused absolute orienta
 - `imuwebmaxfps` *(admin)* — IMU web max FPS: <1..30> · `imuwebmaxfps <1..30>` _(setting · int 1–30 · default 15)_
 - `imudevicepollms` *(admin)* — IMU device poll interval: <50..1000> · `imuDevicePollMs <50..1000>` _(setting · int 50–1000 · default 200)_
 - `imuorientationmode` *(admin)* — IMU orientation mode: <0..8> · `imuorientationmode <0..8>` _(setting · enum · default 8 (Upside Down) · options 0=Normal, 1=Flip Pitch, 2=Flip Roll, 3=Flip Yaw, 4=Flip Pitch+Roll, 5=Roll 180 Fix, 6=Rotate 90 CCW, 7=Alt Extreme Pitch, 8=Upside Down)_
-- `imuorientationcorrection` *(admin)* — IMU orientation correction: <0|1> · `imuorientationcorrection <0|1>`
-- `imupitchoffset` *(admin)* — IMU pitch offset: <-180..180> · `imupitchoffset <-180..180>` _(setting · float · default 0.0)_
-- `imurolloffset` *(admin)* — IMU roll offset: <-180..180> · `imurolloffset <-180..180>` _(setting · float · default 0.0)_
-- `imuyawoffset` *(admin)* — IMU yaw offset: <-180..180> · `imuyawoffset <-180..180>` _(setting · float · default 0.0)_
+- `imuorientationcorrection` *(admin)* — IMU orientation correction: <0|1> · `imuorientationcorrection <0|1>` _(setting · bool · default on)_
+- `imupitchoffset` *(admin)* — IMU pitch offset in degrees (recommended -180..180) · `imupitchoffset <degrees> (recommended -180..180)` _(setting · float · default 0.0)_
+- `imurolloffset` *(admin)* — IMU roll offset in degrees (recommended -180..180) · `imurolloffset <degrees> (recommended -180..180)` _(setting · float · default 0.0)_
+- `imuyawoffset` *(admin)* — IMU yaw offset in degrees (recommended -180..180) · `imuyawoffset <degrees> (recommended -180..180)` _(setting · float · default 0.0)_
 - `imuautostart` — Enable/disable IMU auto-start after boot [on|off] · `imuautostart [on|off]` _(setting · bool · default off)_
 
 ### `input` — Input device (gamepad or ANO encoder)
@@ -482,7 +482,7 @@ _Requires `ENABLE_GAMEPAD_SENSOR`._
 
 Adafruit Seesaw I2C gamepad (analog joystick plus buttons), exposed here as a low-level debug interface for the raw device. The driver-agnostic open/close/autostart/poll commands live under the input module; the only gamepad-specific command is gamepadread, which polls the Seesaw once and dumps raw state -- joystick X/Y and the button bitmask -- attempting an on-demand connect with backoff if the device is not yet initialized. A background task polls the gamepad at roughly 50 ms and caches the latest reading for the OLED UI and sensor JSON. This module is mutually exclusive at build time with anoencoder; only one input device is compiled in per firmware (see input).
 
-- `gamepadread` — Read Seesaw gamepad state (x/y/buttons).
+- `gamepadread` — Read Seesaw gamepad state (x/y/buttons). (add 'json' for JSON output)
 
 ### `anoencoder` — ANO rotary encoder — debug + driver-specific config
 
@@ -490,7 +490,7 @@ _Requires `ENABLE_ANO_ENCODER`._
 
 Adafruit ANO directional navigation rotary encoder on Seesaw I2C: a click wheel with a center IN press and UP/DOWN/LEFT/RIGHT buttons, used as the OLED navigation input. This module provides debug and remap commands; the actual open/close/autostart/poll lifecycle lives under the input module. anoencoderread dumps raw state -- encoder position, the currently selected rotary axis, and the button bitmask. Remap commands persist to settings: anoencoderi2caddr <1-127> changes the device address (reboot required), anoencoderinvert [on|off] reverses rotation direction, and anoencoderswapud / anoencoderswaplr [on|off|toggle] swap the UP/DOWN and LEFT/RIGHT button pairs. A polling task accumulates encoder detents so fast spins do not drop clicks. Mutually exclusive at build time with the Seesaw gamepad.
 
-- `anoencoderread` — Read ANO encoder state.
+- `anoencoderread` — Read ANO encoder state. (add 'json' for JSON output)
 - `anoencoderi2caddr` *(admin)* — Set ANO I2C address [1-127] · `anoencoderi2caddr <1-127>` _(setting · int 1–127 · default I2C_ADDR_ANO_ENCODER)_
 - `anoencoderinvert` — Invert rotation direction [on|off] · `anoencoderinvert [on|off]` _(setting · bool · default off)_
 - `anoencoderswapud` — Swap UP/DOWN buttons [on|off|toggle] · `anoencoderswapud [on|off|toggle]` _(setting · bool · default on)_
@@ -504,7 +504,7 @@ The APDS9960 is a combined RGB color, proximity, and gesture sensor. openapds st
 
 - `openapds` — Start APDS9960 sensor.
 - `closeapds` — Stop APDS9960 sensor.
-- `apdsread` — Read APDS9960 sensor status and data.
+- `apdsread` — Read APDS9960 sensor status and data. (add 'json' for JSON output)
 - `apdsmode` — Control APDS modes: apdsmode <color|proximity|gesture> [on|off]. · `apdsmode <color|proximity|gesture> [<on|off>]`
 - `apdscolor` — Read APDS9960 color values.
 - `apdsproximity` — Read APDS9960 proximity value.
@@ -519,7 +519,7 @@ PA1010D I2C GPS receiver. Lifecycle: opengps starts the parser task, gpsread pri
 
 - `opengps` — Start PA1010D GPS module.
 - `closegps` — Stop PA1010D GPS module.
-- `gpsread` — Read GPS location and time data.
+- `gpsread` — Read GPS location and time data. (add 'json' for JSON output)
 - `gpsautostart` — Enable/disable GPS auto-start after boot [on|off] · `gpsautostart [on|off]` _(setting · bool · default off)_
 - `gpslog` — Set up and start GPS track logging now (persists across boots). Usage: gpslog [interval_ms] · `gpslog [interval_ms] Sets gpsAutoStart, sensorlog format=track, sensors=gps, and autostart, then starts both the GPS sensor and sensor logging immediately. interval_ms: log interval in ms (default 1000, min 100) Example: gpslog (1-second logging) gpslog 500 (500ms logging)`
 
@@ -531,7 +531,7 @@ RDA5807M I2C FM radio receiver. Lifecycle: openfmradio starts it, fmradioread re
 
 - `openfmradio` — Start FM Radio sensor.
 - `closefmradio` — Stop FM Radio sensor.
-- `fmradioread` — Read FM Radio status.
+- `fmradioread` — Read FM Radio status. (add 'json' for JSON output)
 - `fmradiotune` — Tune to frequency: <freq> · `fmradiotune <frequency> (e.g., 103.9 or 10390)`
 - `fmradioseek` — Seek next station [up|down] · `fmradioseek [up|down]`
 - `fmradiovolume` — Set volume: <0-15> · `fmradiovolume <0-15>`
@@ -547,7 +547,7 @@ DS3231 precision I2C real-time clock with battery backup and an on-chip temperat
 
 - `openrtc` — Start DS3231 RTC sensor.
 - `closertc` — Stop DS3231 RTC sensor.
-- `rtcread` — Read RTC status [status|temp] · `rtcread [status|temp]`
+- `rtcread` — Read RTC status [status|temp] · `rtcread [status|temp] [json]`
 - `rtcset` *(admin)* — Set RTC time: <datetime|timestamp> · `rtcset YYYY-MM-DD HH:MM:SS or rtcset <unix_timestamp>`
 - `rtcsync` *(admin)* — Sync time: [to|from] · `rtcsync [to|from] (to=RTC->system, from=system->RTC)`
 - `rtcautostart` — Enable/disable RTC auto-start after boot [on|off] · `rtcautostart [on|off]` _(setting · bool · default on)_
@@ -560,8 +560,8 @@ The STHS34PF80 is an infrared presence and motion sensor that detects warm bodie
 
 - `openpresence` — Start STHS34PF80 IR presence/motion sensor.
 - `closepresence` — Stop STHS34PF80 sensor.
-- `presenceread` — Read STHS34PF80 presence/motion/temperature data.
-- `presencestatus` — Show STHS34PF80 sensor status.
+- `presenceread` — Read STHS34PF80 presence/motion/temperature data. (add 'json' for JSON output)
+- `presencestatus` — Show STHS34PF80 sensor status. (add 'json' for JSON output)
 - `presenceautostart` — Enable/disable presence auto-start after boot [on|off] · `presenceautostart [on|off]` _(setting · bool · default off)_
 
 ### `camera` — ESP32-S3 DVP camera sensor
@@ -583,11 +583,11 @@ Driver and CLI for the attached DVP camera sensor (OV2640/OV3660 class). The sen
 - `camerabrightness` — Set brightness: <-2..2> · `camerabrightness <-2..2>` _(setting · int -2–2 · default 2)_
 - `cameracontrast` — Set contrast: <-2..2> · `cameracontrast <-2..2>` _(setting · int -2–2 · default 2)_
 - `camerasaturation` — Set saturation: <-2..2> · `camerasaturation <-2..2>` _(setting · int -2–2 · default 2)_
-- `camerawb` *(admin)* — White balance mode: <0-4> · `camerawb <0..4> (0=Auto,1=Sunny,2=Cloudy,3=Office,4=Home)`
+- `camerawb` *(admin)* — White balance mode: <0-4> · `camerawb <0..4> (0=Auto,1=Sunny,2=Cloudy,3=Office,4=Home)` _(setting · enum · default 0 (Auto) · options 0=Auto, 1=Sunny, 2=Cloudy, 3=Office, 4=Home)_
 - `camerasharpness` *(admin)* — Set sharpness: <-2..2> · `camerasharpness <-2..2> (OV3660 only)` _(setting · int -2–2 · default 0)_
 - `cameradenoise` *(admin)* — Set denoise level: <0-8> · `cameradenoise <0..8>` _(setting · int 0–8 · default 0)_
-- `cameraeffect` *(admin)* — Special effect: <0-6> · `cameraeffect <0..6> (0=None,1=Negative,2=Grayscale,3=Red,4=Green,5=Blue,6=Sepia)`
-- `cameraexposure` *(admin)* — Set AE level: <-2..2> · `cameraexposure <-2..2> (negative=darker)`
+- `cameraeffect` *(admin)* — Special effect: <0-6> · `cameraeffect <0..6> (0=None,1=Negative,2=Grayscale,3=Red,4=Green,5=Blue,6=Sepia)` _(setting · enum · default 0 (None) · options 0=None, 1=Negative, 2=Grayscale, 3=Red Tint, 4=Green Tint, 5=Blue Tint, 6=Sepia)_
+- `cameraexposure` *(admin)* — Set AE level: <-2..2> · `cameraexposure <-2..2> (negative=darker)` _(setting · int -2–2 · default 0)_
 - `cameraaec` *(admin)* — Auto exposure: <on|off> · `cameraaec <on|off|1|0|true|auto>`
 - `cameraaecvalue` *(admin)* — Exposure value: <0-1200> · `cameraaecvalue <0..1200>`
 - `cameraagc` *(admin)* — Auto gain: <on|off> · `cameraagc <on|off|1|0|true|auto>`
@@ -617,7 +617,7 @@ Driver and CLI for the attached DVP camera sensor (OV2640/OV3660 class). The sen
 - `camerasendaftercapture` *(admin)* — Send after capture: <on|off> · `camerasendaftercapture <on|off|1|0|true>` _(setting · bool · default off)_
 - `cameratargetdevice` *(admin)* — Target device: <name> · `cameratargetdevice <name>` _(setting · string · default (empty))_
 - `camerarecord` — Start/stop MJPEG-AVI recording (SD only): <start|stop> · `camerarecord <start|stop|1|0>`
-- `cameravideolist` — List AVI recordings on SD
+- `cameravideolist` — List AVI recordings on SD (add 'json' for JSON output)
 - `cameravideodelete` *(admin)* — Delete recording: "<filename>" · `cameravideodelete "<filename>"`
 
 ### `microphone` — PDM microphone audio sensor
@@ -626,18 +626,18 @@ _Requires `ENABLE_MICROPHONE_SENSOR`._
 
 Driver and CLI for the on-board PDM microphone. The mic must be started with openmic before reads or recording (closemic stops it); commands that need the running mic return a use-openmic-first error otherwise. miclevel returns the current audio level (percent; add json for structured output) and micviz shows a live level meter until a key is pressed. micrecord start|stop records audio to a WAV file, miclist lists saved recordings, and micdelete removes one or all of them. Audio format is configured with micsamplerate (8000-48000), micgain (0-100), and micbitdepth (16 or 32), each usable as a getter with no argument; micautostart on|off persists whether the mic powers up automatically at boot.
 
-- `micread` — Read microphone sensor status. · `micread`
+- `micread` — Read microphone sensor status. · `micread [json]`
 - `openmic` — Start microphone sensor.
 - `closemic` — Stop microphone sensor.
-- `miclevel` — Get current audio level. · `miclevel`
+- `miclevel` — Get current audio level. · `miclevel [json]`
 - `micviz` — Real-time audio level visualizer. · `micviz (press any key to stop)`
-- `micrecord` — Start/stop recording to WAV file. · `micrecord <start|stop>`
-- `miclist` — List saved recordings. · `miclist`
+- `micrecord` — Start/stop recording to WAV file (bare = show recording status). · `micrecord [start|stop|1|0]`
+- `miclist` — List saved recordings. · `miclist [json]`
 - `micdelete` *(admin)* — Delete recording(s). · `micdelete "<filename>" | micdelete all`
 - `micsamplerate` — Get/set sample rate. · `micsamplerate [8000-48000]`
 - `micgain` — Get/set microphone gain. · `micgain [0-100]`
 - `micbitdepth` — Get/set bit depth. · `micbitdepth [16|32]`
-- `micautostart` — Enable/disable microphone auto-start after boot [on|off] · `micautostart [on|off]`
+- `micautostart` — Enable/disable microphone auto-start after boot [on|off] · `micautostart [on|off]` _(setting · bool · default off)_
 
 ### `edgeimpulse` — Edge Impulse ML inference
 
@@ -650,7 +650,7 @@ On-device machine-learning image inference using TensorFlow Lite Micro models ex
 - `eidetect` — Run single object detection inference. · `eidetect`
 - `eifile` — Run inference on stored JPEG image. · `eifile "<path>"`
 - `eicontinuous` — Start/stop continuous inference mode. · `eicontinuous <0|1>` _(setting · bool · default off)_
-- `eiconfidence` — Set minimum detection confidence. · `eiconfidence <0.0-1.0>`
+- `eiconfidence` — Set minimum detection confidence. · `eiconfidence <0.0-1.0>` _(setting · float · default 0.6)_
 - `eistatus` — Show Edge Impulse status. · `eistatus`
 - `eimodel` — Model management commands. · `eimodel <subcommand>`
 - `eimodellist` — List available .tflite models. · `eimodellist`
@@ -669,12 +669,12 @@ _Requires `ENABLE_ESP_SR`._
 Offline voice control built on Espressif ESP-SR: a WakeNet wake-word stage gates a MultiNet command-phrase recognizer, so the device waits for the wake word and then listens for a known command phrase. Note that srenable/sr enable only reports the compile-time build flag and cannot toggle the feature at runtime; the real lifecycle commands are opensr/srstart to start the recognition pipeline and closesr/srstop to stop it. Starting the pipeline also arms voice command execution as the current authenticated user (and stopping it disarms); arming can be managed directly with voicearm/voicedisarm/voicestatus, and recognized phrases only execute commands while armed. The command vocabulary is managed with the srcmds family (list/add/del/clear plus save/reload to an SD file and srcmdssync to import phrases from the CLI registry). Recognition is tuned through srconfidence, srtimeout, the srtuning* audio controls (gain, AGC, VAD, filters), and srdebug* telemetry; setmicsource local|g2 switches the audio feed between the local PDM mic and the G2 glasses left-temple mic, and the srsnip* commands capture audio snippets (by default on the wake word) for debugging.
 
 - `sr` — ESP-SR speech recognition commands. · `sr <enable|start|stop|status|stack|cmds|debug|confidence|timeout|tuning|accept|dyngain|raw|autotune|snip>`
-- `srenable` *(admin)* — Enable/disable ESP-SR (compile-time flag). · `srenable <0|1>`
-- `opensr` — Start ESP-SR pipeline. · `opensr`
+- `srenable` *(admin)* — ESP-SR enable is a compile-time flag (cannot be toggled at runtime). · `srenable (informational; ESP-SR is set at compile time, any 0|1 argument is ignored)`
+- `opensr` — Start ESP-SR pipeline and arm voice as the current user. · `opensr`
 - `closesr` — Stop ESP-SR pipeline. · `closesr`
 - `srstatus` — Show ESP-SR status. · `srstatus`
 - `srstack` — Show sr_task stack high-water mark (run after voice stress test). · `srstack`
-- `srstart` — Start ESP-SR pipeline. · `srstart`
+- `srstart` — Start ESP-SR pipeline and arm voice as the current user. · `srstart`
 - `srstop` — Stop ESP-SR pipeline. · `srstop`
 - `voicearm` — Arm voice command execution as the current authenticated user. · `voicearm`
 - `voicedisarm` — Disarm voice command execution. · `voicedisarm`
@@ -692,14 +692,14 @@ Offline voice control built on Espressif ESP-SR: a WakeNet wake-word stage gates
 - `srdebugtelem` — Set periodic telemetry interval (ms, 0=off). · `srdebugtelem [ms]`
 - `srdebugstats` — Print current SR statistics. · `srdebugstats`
 - `srdebugreset` — Reset SR debug counters. · `srdebugreset`
-- `srconfidence` — Get/set command confidence threshold. · `srconfidence [0.0-1.0]`
+- `srconfidence` — Get/set command confidence threshold. · `srconfidence [<0.0-1.0> | category <0.0-1.0> | target <0.0-1.0>]`
 - `sraccept` — Configure target acceptance policy (gap acceptance). · `sraccept [on|off|floor <0.0-1.0>|gap <0.0-1.0>|speech <0|1>]`
 - `srdyngain` — Configure dynamic gain normalization (MultiNet input only). · `srdyngain [on|off|min <0.1-10>|max <0.1-10>|target <1000-30000>|alpha <0.0-1.0>|reset]`
 - `srraw` — Toggle raw output mode (shows all MultiNet hypotheses). · `srraw [on|off]`
 - `srautotune` — Auto-cycle through gain configurations to find best settings. · `srautotune [start|stop|status]`
-- `srtimeout` — Get/set command listening timeout. · `srtimeout [1000-30000]`
-- `setmicsource` — Phase 2B: switch SR feed source (local PDM / G2 left temple). · `setmicsource [local|g2]`
-- `srtuning` — Show/set audio tuning parameters. · `srtuning [gain|agc|vad]`
+- `srtimeout` — Get/set command listening timeout. · `srtimeout [1000-30000]` _(setting · int 1000–30000 · default 6000)_
+- `setmicsource` — Switch SR feed source (local PDM / G2 left temple). · `setmicsource [local|g2]`
+- `srtuning` — Show/set audio tuning parameters. · `srtuning [<gain|agc|vad|swgain|filters> <value>] (bare = show status)`
 - `srtuningswgain` — Set software gain (1.0-50.0) by updating shared micgain. · `srtuningswgain <1.0-50.0>`
 - `srtuninggain` — Set AFE linear gain (0.1-10.0). · `srtuninggain <0.1-10.0>`
 - `srtuningagc` — Set AGC mode (0=off, 1-3=levels). · `srtuningagc <0-3>`
@@ -744,14 +744,14 @@ The i2c module configures and diagnoses up to two I2C buses and the sensor devic
 - `i2cpause` *(admin)* — Pause all I2C sensor polling.
 - `i2cresume` *(admin)* — Resume I2C sensor polling.
 - `i2crecover` *(admin)* — Clear degraded state for device: <address> · `i2crecover <address> (hex 0x01-0x7F or decimal 1-127)`
-- `i2cmetrics` — Show I2C bus performance metrics.
+- `i2cmetrics` — Show I2C bus performance metrics. (add 'json' for JSON output)
 - `i2cscan` — Scan I2C bus for devices.
 - `detect` — Detect hardware: scan I2C buses, diff vs. configured features. · `detect [apply] detect - read-only report (present/enabled/missing) detect apply - auto-enable cheap detected devices (admin; reboot for some)`
 - `i2cstats` — I2C bus statistics and errors.
-- `i2chealth` — Show per-device I2C health status.
+- `i2chealth` — Show per-device I2C health status. (add 'json' for JSON output)
 - `sensors` — List I2C sensors [filter] · `sensors [filter] - filter by name, description, or manufacturer sensors json [brief] - live state (+readings; 'brief' = state only, no data) Example: sensors temperature, sensors json brief`
 - `sensorinfo` — Sensor details: <name> · `sensorinfo <sensor_name> Example: sensorinfo BNO055`
-- `devices` — Show discovered I2C device registry.
+- `devices` — Show discovered I2C device registry. (add 'json' for JSON output)
 - `discover` — Re-scan and register I2C devices.
 - `devicefile` — Show device registry JSON file.
 - `sensorautostart` *(admin)* — Sensor auto-start: [sensor] [on|off] · `sensorautostart [sensor] [on|off] sensorautostart all [on|off] Sensors: thermal, tof, imu, gps, fmradio, apds, input`
@@ -762,13 +762,13 @@ _Requires `ENABLE_AUTOMATION`._
 
 The automation module runs saved jobs (stored in automations.json) that execute one or more CLI commands on a schedule or condition. Every automation has one of three trigger types: atTime (fires daily at time=HH:MM, optionally limited to days=Mon,Tue,...), afterDelay (fires once after delayms milliseconds), or interval (fires repeatedly every intervalms milliseconds); jobs can also carry runatboot=1 to fire at startup. The primary entry point is automation <subcommand> (list, add, enable, disable, delete, run, trigger, sanitize, recompute) with single-word aliases automationlist, automationadd, automationrun, and automationtrigger. Note the important distinction: automationrun id=<id> executes a job commands immediately, whereas automationtrigger id=<id> only arms an afterDelay/manual timer so it fires after its delay; and automation system enable|disable|status is the global master switch that gates whether the scheduler runs at all, independent of each job own enabled flag. Jobs may also include an optional condition expression, and conditional commands use an IF <expr> THEN <command> [ELSE <command>] form (e.g. IF temp>75 THEN ledcolor red); by default a true condition fires every poll, but triggerMode once makes it fire only on the false-to-true edge. Supporting commands: validate-conditions checks conditional syntax without running it, autolog records automation activity to a file, and print <message> broadcasts text to all outputs.
 
-- `automation` — Automation system: automation <subcommand> [args]. · `automation <system enable|disable|status [json] | list [json] | add | enable | disable | delete | run | trigger | sanitize | recompute>`
+- `automation` — Automation system: automation <subcommand> [args]. · `automation <system enable|disable|status | list | add | enable | disable | delete | run | trigger | sanitize | recompute>`
 - `automationlist` — List all automations.
-- `automationadd` — Add automation (KEY=VALUE; name/type/command required). Same as 'automation add'. · `automationadd name=<name> type=atTime|afterDelay|interval command=<cmd>|commands=<c1;c2> [time=HH:MM] [delayms=<n>] [intervalms=<n>] [days=Mon,Tue] [condition=<expr>] [enabled=1] [runatboot=1]`
+- `automationadd` — Add automation (same as 'automation add').
 - `automationrun` — Run automation by ID: automationrun id=<id>.
 - `automationtrigger` — Arm afterDelay automation timer: automationtrigger id=<id>.
-- `autolog` — Automation logging: autolog start "<file>" | stop | status. · `autolog start "<filename>" | autolog stop | autolog status`
-- `validate-conditions` *(admin)* — Validate conditional automation syntax: validate-conditions IF temp>75 THEN ledcolor red. · `validate-conditions IF <expr> THEN <command> [ELSE <command>] (e.g. validate-conditions IF temp>75 THEN ledcolor red)`
+- `autolog` — Automation logging: autolog start <file> | stop | status. · `autolog start <filename> | autolog stop | autolog status`
+- `validate-conditions` *(admin)* — Validate conditional automation syntax: validate-conditions IF temp>75 THEN ledcolor red.
 - `print` — Broadcast a message to all outputs: print <message>.
 
 ### `battery` — Battery voltage and charge monitoring
@@ -778,7 +778,7 @@ _Requires `ENABLE_BATTERY_MONITOR`._
 The battery module reports cell state and keeps a time-series log; it is only present when battery monitoring is compiled in. The backend is a MAX17048 fuel gauge over I2C (with an ADC or USB-only fallback on other boards), and charging detection cross-references the gauge CRATE register with a VBUS-present signal so the reported state distinguishes truly charging from merely USB-powered. batterystatus prints voltage, charge percentage, charging/USB state, and a coarse status label, or returns the same data as JSON. batterylog manages a CSV discharge/charge log written to the device for later graphing: with no args it shows status, and subcommands are on/off (enable/disable), interval <5..3600> seconds (sampling period), tail (show the most recent rows), and clear (erase the log); significant events such as sleep/wake are always recorded regardless of the interval. batterycalibrate (admin) re-calibrates the ADC-based readings.
 
 - `batterystatus` — Show battery voltage, charge level, and status
-- `batterycalibrate` *(admin)* — Recalibrate battery ADC readings
+- `batterycalibrate` *(admin)* — Recalibrate/re-probe the battery sensor (ADC characterize or fuel-gauge re-probe)
 - `batterylog` — Battery time-series CSV log (on/off/interval/tail/clear) · `batterylog [on|off|interval <s>|tail|clear]`
 
 ### `debug` — System debugging and diagnostics
@@ -791,75 +791,75 @@ The debug subsystem controls diagnostic logging verbosity across every part of t
 - `debughttps` *(admin)* — Debug HTTPS/TLS handshake + connection errors (ESP-IDF logs). · `debughttps <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugsse` *(admin)* — Debug Server-Sent Events. · `debugsse <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugcli` *(admin)* — Debug CLI processing. · `debugcli <0|1> [temp|runtime]` _(setting · bool · default off)_
-- `debugauth` *(admin)* — Debug authentication (parent flag). · `debugauth <0|1>` _(setting · bool · default off)_
-- `debugespnow` *(admin)* — Debug ESP-NOW (parent flag). · `debugespnow <0|1>` _(setting · bool · default off)_
+- `debugauth` *(admin)* — Debug authentication (parent flag). · `debugauth <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnow` *(admin)* — Debug ESP-NOW core messages (alias of debugespnowcore). · `debugespnow <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugbluetooth` *(admin)* — Debug Bluetooth (parent flag). · `debugbluetooth <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugbluetoothcore` *(admin)* — Debug Bluetooth core lifecycle. · `debugbluetoothcore <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugbluetoothgatt` *(admin)* — Debug Bluetooth GATT operations. · `debugbluetoothgatt <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugbluetoothdata` *(admin)* — Debug Bluetooth command/data path. · `debugbluetoothdata <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugcamera` *(admin)* — Debug camera (parent flag). · `debugcamera <0|1> [temp|runtime]` _(setting · bool · default off)_
-- `debugcameralifecycle` *(admin)* — Debug camera init/stop/PWDN-RESET/GPIO state. · `debugcameralifecycle <0|1>` _(setting · bool · default off)_
-- `debugcameracapture` *(admin)* — Debug captureFrame, JPEG validation, fb buffer, recovery. · `debugcameracapture <0|1>` _(setting · bool · default off)_
-- `debugcamerasettings` *(admin)* — Debug runtime camera resolution/quality changes. · `debugcamerasettings <0|1>` _(setting · bool · default off)_
-- `debugcameravideo` *(admin)* — Debug video recording start/finalize, frame writing. · `debugcameravideo <0|1>` _(setting · bool · default off)_
-- `debugdisplay` *(admin)* — Debug OLED init/probe/boot-animation/mode-transitions. · `debugdisplay <0|1>` _(setting · bool · default off)_
+- `debugcameralifecycle` *(admin)* — Debug camera init/stop/PWDN-RESET/GPIO state. · `debugcameralifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugcameracapture` *(admin)* — Debug captureFrame, JPEG validation, fb buffer, recovery. · `debugcameracapture <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugcamerasettings` *(admin)* — Debug runtime camera resolution/quality changes. · `debugcamerasettings <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugcameravideo` *(admin)* — Debug video recording start/finalize, frame writing. · `debugcameravideo <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugdisplay` *(admin)* — Debug OLED init/probe/boot-animation/mode-transitions. · `debugdisplay <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugmicrophone` *(admin)* — Debug microphone operations. · `debugmicrophone <0|1> [temp|runtime]` _(setting · bool · default off)_
-- `debuggps` *(admin)* — Debug GPS sensor (PA1010D). · `debuggps <0|1>` _(setting · bool · default off)_
-- `debugrtc` *(admin)* — Debug RTC sensor (DS3231). · `debugrtc <0|1>` _(setting · bool · default off)_
-- `debugimu` *(admin)* — Debug IMU sensor (BNO055). · `debugimu <0|1>` _(setting · bool · default off)_
-- `debugthermal` *(admin)* — Debug thermal sensor (MLX90640). · `debugthermal <0|1>` _(setting · bool · default off)_
-- `debugtof` *(admin)* — Debug ToF sensor (VL53L4CX). · `debugtof <0|1>` _(setting · bool · default off)_
-- `debuginput` *(admin)* — Debug input abstraction layer (HAL_Input + OLED dispatch). · `debuginput <0|1>` _(setting · bool · default off)_
-- `debuganoencoder` *(admin)* — Debug ANO rotary encoder driver internals. · `debuganoencoder <0|1>` _(setting · bool · default off)_
-- `debugapds` *(admin)* — Debug APDS sensor (APDS9960). · `debugapds <0|1>` _(setting · bool · default off)_
-- `debugpresence` *(admin)* — Debug presence sensor (STHS34PF80). · `debugpresence <0|1>` _(setting · bool · default off)_
-- `debugthermallifecycle` *(admin)* — Debug thermal init/connect/recovery. · `debugthermallifecycle <0|1>` _(setting · bool · default off)_
-- `debugthermalpolling` *(admin)* — Debug thermal poll cadence/FPS/capture. · `debugthermalpolling <0|1>` _(setting · bool · default off)_
-- `debugthermalvalues` *(admin)* — Debug thermal value updates/interpolation. · `debugthermalvalues <0|1>` _(setting · bool · default off)_
-- `debugtoflifecycle` *(admin)* — Debug ToF init/connect/recovery. · `debugtoflifecycle <0|1>` _(setting · bool · default off)_
-- `debugtofpolling` *(admin)* — Debug ToF poll cadence/capture. · `debugtofpolling <0|1>` _(setting · bool · default off)_
-- `debugtofvalues` *(admin)* — Debug ToF range/object detection values. · `debugtofvalues <0|1>` _(setting · bool · default off)_
-- `debuginputlifecycle` *(admin)* — Debug input abstraction layer lifecycle. · `debuginputlifecycle <0|1>` _(setting · bool · default off)_
-- `debuginputpolling` *(admin)* — Debug input abstraction layer poll/dispatch. · `debuginputpolling <0|1>` _(setting · bool · default off)_
-- `debuginputvalues` *(admin)* — Debug input abstraction layer event values. · `debuginputvalues <0|1>` _(setting · bool · default off)_
-- `debuganoencoderlifecycle` *(admin)* — Debug ANO encoder init/connect/recovery. · `debuganoencoderlifecycle <0|1>` _(setting · bool · default off)_
-- `debuganoencoderpolling` *(admin)* — Debug ANO encoder poll/encoder reads. · `debuganoencoderpolling <0|1>` _(setting · bool · default off)_
-- `debuganoencodervalues` *(admin)* — Debug ANO encoder rotation/button events. · `debuganoencodervalues <0|1>` _(setting · bool · default off)_
-- `debugimulifecycle` *(admin)* — Debug IMU init/connect/recovery. · `debugimulifecycle <0|1>` _(setting · bool · default off)_
-- `debugimupolling` *(admin)* — Debug IMU poll cadence. · `debugimupolling <0|1>` _(setting · bool · default off)_
-- `debugimuvalues` *(admin)* — Debug IMU orientation/acceleration values. · `debugimuvalues <0|1>` _(setting · bool · default off)_
-- `debugapdslifecycle` *(admin)* — Debug APDS init/connect/recovery. · `debugapdslifecycle <0|1>` _(setting · bool · default off)_
-- `debugapdspolling` *(admin)* — Debug APDS poll cadence. · `debugapdspolling <0|1>` _(setting · bool · default off)_
-- `debugapdsvalues` *(admin)* — Debug APDS color/proximity/gesture values. · `debugapdsvalues <0|1>` _(setting · bool · default off)_
-- `debuggpslifecycle` *(admin)* — Debug GPS init/connect/recovery. · `debuggpslifecycle <0|1>` _(setting · bool · default off)_
-- `debuggpspolling` *(admin)* — Debug GPS poll cadence. · `debuggpspolling <0|1>` _(setting · bool · default off)_
-- `debuggpsvalues` *(admin)* — Debug GPS NMEA/fix/coordinate values. · `debuggpsvalues <0|1>` _(setting · bool · default off)_
-- `debugrtclifecycle` *(admin)* — Debug RTC init/connect/recovery. · `debugrtclifecycle <0|1>` _(setting · bool · default off)_
-- `debugrtcpolling` *(admin)* — Debug RTC poll cadence. · `debugrtcpolling <0|1>` _(setting · bool · default off)_
-- `debugrtcvalues` *(admin)* — Debug RTC time-read values. · `debugrtcvalues <0|1>` _(setting · bool · default off)_
-- `debugfmradiolifecycle` *(admin)* — Debug FM radio init/tune/recovery. · `debugfmradiolifecycle <0|1>` _(setting · bool · default off)_
-- `debugfmradiopolling` *(admin)* — Debug FM radio poll cadence. · `debugfmradiopolling <0|1>` _(setting · bool · default off)_
-- `debugfmradiovalues` *(admin)* — Debug FM radio RDS/RSSI/state values. · `debugfmradiovalues <0|1>` _(setting · bool · default off)_
-- `debugmiclifecycle` *(admin)* — Debug microphone init/start/stop. · `debugmiclifecycle <0|1>` _(setting · bool · default off)_
-- `debugmicpolling` *(admin)* — Debug microphone capture cadence. · `debugmicpolling <0|1>` _(setting · bool · default off)_
-- `debugmicvalues` *(admin)* — Debug microphone level/sample values. · `debugmicvalues <0|1>` _(setting · bool · default off)_
-- `debugpresencelifecycle` *(admin)* — Debug presence sensor init/connect/recovery. · `debugpresencelifecycle <0|1>` _(setting · bool · default off)_
-- `debugpresencepolling` *(admin)* — Debug presence sensor poll cadence. · `debugpresencepolling <0|1>` _(setting · bool · default off)_
-- `debugpresencevalues` *(admin)* — Debug presence detection values. · `debugpresencevalues <0|1>` _(setting · bool · default off)_
-- `debugmaps` *(admin)* — Debug maps (parent flag). · `debugmaps <0|1>` _(setting · bool · default off)_
-- `debugmapsloading` *(admin)* — Debug map file loading and tile directory. · `debugmapsloading <0|1>` _(setting · bool · default off)_
-- `debugmapsrendering` *(admin)* — Debug map render pipeline and feature drawing. · `debugmapsrendering <0|1>` _(setting · bool · default off)_
-- `debugmapsperf` *(admin)* — Debug map performance timing (render ms, tile I/O, cache, FPS). · `debugmapsperf <0|1>` _(setting · bool · default off)_
+- `debuggps` *(admin)* — Debug GPS sensor (PA1010D). · `debuggps <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugrtc` *(admin)* — Debug RTC sensor (DS3231). · `debugrtc <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugimu` *(admin)* — Debug IMU sensor (BNO055). · `debugimu <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugthermal` *(admin)* — Debug thermal sensor (MLX90640). · `debugthermal <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugtof` *(admin)* — Debug ToF sensor (VL53L4CX). · `debugtof <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuginput` *(admin)* — Debug input abstraction layer (HAL_Input + OLED dispatch). · `debuginput <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuganoencoder` *(admin)* — Debug ANO rotary encoder driver internals. · `debuganoencoder <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugapds` *(admin)* — Debug APDS sensor (APDS9960). · `debugapds <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugpresence` *(admin)* — Debug presence sensor (STHS34PF80). · `debugpresence <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugthermallifecycle` *(admin)* — Debug thermal init/connect/recovery. · `debugthermallifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugthermalpolling` *(admin)* — Debug thermal poll cadence/FPS/capture. · `debugthermalpolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugthermalvalues` *(admin)* — Debug thermal value updates/interpolation. · `debugthermalvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugtoflifecycle` *(admin)* — Debug ToF init/connect/recovery. · `debugtoflifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugtofpolling` *(admin)* — Debug ToF poll cadence/capture. · `debugtofpolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugtofvalues` *(admin)* — Debug ToF range/object detection values. · `debugtofvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuginputlifecycle` *(admin)* — Debug input abstraction layer lifecycle. · `debuginputlifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuginputpolling` *(admin)* — Debug input abstraction layer poll/dispatch. · `debuginputpolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuginputvalues` *(admin)* — Debug input abstraction layer event values. · `debuginputvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuganoencoderlifecycle` *(admin)* — Debug ANO encoder init/connect/recovery. · `debuganoencoderlifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuganoencoderpolling` *(admin)* — Debug ANO encoder poll/encoder reads. · `debuganoencoderpolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuganoencodervalues` *(admin)* — Debug ANO encoder rotation/button events. · `debuganoencodervalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugimulifecycle` *(admin)* — Debug IMU init/connect/recovery. · `debugimulifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugimupolling` *(admin)* — Debug IMU poll cadence. · `debugimupolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugimuvalues` *(admin)* — Debug IMU orientation/acceleration values. · `debugimuvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugapdslifecycle` *(admin)* — Debug APDS init/connect/recovery. · `debugapdslifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugapdspolling` *(admin)* — Debug APDS poll cadence. · `debugapdspolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugapdsvalues` *(admin)* — Debug APDS color/proximity/gesture values. · `debugapdsvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuggpslifecycle` *(admin)* — Debug GPS init/connect/recovery. · `debuggpslifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuggpspolling` *(admin)* — Debug GPS poll cadence. · `debuggpspolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debuggpsvalues` *(admin)* — Debug GPS NMEA/fix/coordinate values. · `debuggpsvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugrtclifecycle` *(admin)* — Debug RTC init/connect/recovery. · `debugrtclifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugrtcpolling` *(admin)* — Debug RTC poll cadence. · `debugrtcpolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugrtcvalues` *(admin)* — Debug RTC time-read values. · `debugrtcvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugfmradiolifecycle` *(admin)* — Debug FM radio init/tune/recovery. · `debugfmradiolifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugfmradiopolling` *(admin)* — Debug FM radio poll cadence. · `debugfmradiopolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugfmradiovalues` *(admin)* — Debug FM radio RDS/RSSI/state values. · `debugfmradiovalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmiclifecycle` *(admin)* — Debug microphone init/start/stop. · `debugmiclifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmicpolling` *(admin)* — Debug microphone capture cadence. · `debugmicpolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmicvalues` *(admin)* — Debug microphone level/sample values. · `debugmicvalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugpresencelifecycle` *(admin)* — Debug presence sensor init/connect/recovery. · `debugpresencelifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugpresencepolling` *(admin)* — Debug presence sensor poll cadence. · `debugpresencepolling <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugpresencevalues` *(admin)* — Debug presence detection values. · `debugpresencevalues <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmaps` *(admin)* — Debug maps (parent flag). · `debugmaps <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmapsloading` *(admin)* — Debug map file loading and tile directory. · `debugmapsloading <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmapsrendering` *(admin)* — Debug map render pipeline and feature drawing. · `debugmapsrendering <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmapsperf` *(admin)* — Debug map performance timing (render ms, tile I/O, cache, FPS). · `debugmapsperf <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugllm` *(admin)* — Debug on-device LLM (parent flag). · `debugllm <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugllmload` *(admin)* — Debug LLM checkpoint load and validation. · `debugllmload <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugllmtokenizer` *(admin)* — Debug LLM tokenizer / BPE. · `debugllmtokenizer <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugllmforward` *(admin)* — Debug LLM transformer forward (verbose). · `debugllmforward <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugllmgenerate` *(admin)* — Debug LLM generation loop and sampling. · `debugllmgenerate <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugllmmemory` *(admin)* — Debug LLM PSRAM budget and context cap. · `debugllmmemory <0|1> [temp|runtime]` _(setting · bool · default off)_
-- `debugi2c` *(admin)* — Debug I2C bus (parent flag). · `debugi2c <0|1>` _(setting · bool · default off)_
-- `debugi2cbus` *(admin)* — Debug I2C bus lifecycle, polling pause/resume, status bumps. · `debugi2cbus <0|1>` _(setting · bool · default off)_
-- `debugi2cdiscovery` *(admin)* — Debug I2C device probing, registry, scan results. · `debugi2cdiscovery <0|1>` _(setting · bool · default off)_
-- `debugi2cautostart` *(admin)* — Debug I2C sensor auto-start orchestration + init results. · `debugi2cautostart <0|1>` _(setting · bool · default off)_
+- `debugi2c` *(admin)* — Debug I2C bus (parent flag). · `debugi2c <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugi2cbus` *(admin)* — Debug I2C bus lifecycle, polling pause/resume, status bumps. · `debugi2cbus <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugi2cdiscovery` *(admin)* — Debug I2C device probing, registry, scan results. · `debugi2cdiscovery <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugi2cautostart` *(admin)* — Debug I2C sensor auto-start orchestration + init results. · `debugi2cautostart <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugwifi` *(admin)* — Debug WiFi operations. · `debugwifi <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugstorage` *(admin)* — Debug storage operations. · `debugstorage <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugperformance` *(admin)* — Debug performance metrics. · `debugperformance <0|1> [temp|runtime]` _(setting · bool · default off)_
@@ -870,34 +870,34 @@ The debug subsystem controls diagnostic logging verbosity across every part of t
 - `debugdatetimeresolve` *(admin)* — Debug NTP timestamp resolution for users. · `debugdatetimeresolve <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debugverbose` *(admin)* — Global debug verbosity override (forces all debug + loglevel=DEBUG). · `debugverbose <0|1>`
 - `debugbuffer` *(admin)* — Show debug ring buffer status.
-- `debugcommandflow` *(admin)* — Debug command flow. · `debugcommandflow <0|1>` _(setting · bool · default off)_
-- `debugusers` *(admin)* — Debug user management. · `debugusers <0|1>` _(setting · bool · default off)_
-- `debugsystem` *(admin)* — Debug system/boot operations. · `debugsystem <0|1>` _(setting · bool · default off)_
-- `debugespnowstream` *(admin)* — Debug ESP-NOW streaming output. · `debugespnowstream <0|1>` _(setting · bool · default off)_
-- `debugespnowcore` *(admin)* — Debug ESP-NOW core operations. · `debugespnowcore <0|1>` _(setting · bool · default off)_
-- `debugespnowrouter` *(admin)* — Debug ESP-NOW router operations. · `debugespnowrouter <0|1>` _(setting · bool · default off)_
-- `debugespnowmesh` *(admin)* — Debug ESP-NOW mesh operations. · `debugespnowmesh <0|1>` _(setting · bool · default off)_
-- `debugespnowtopo` *(admin)* — Debug ESP-NOW topology discovery. · `debugespnowtopo <0|1>` _(setting · bool · default off)_
-- `debugespnowencryption` *(admin)* — Debug ESP-NOW encryption. · `debugespnowencryption <0|1>` _(setting · bool · default off)_
-- `debugespnowmetadata` *(admin)* — Debug ESP-NOW metadata exchange (REQ/RESP/PUSH). · `debugespnowmetadata <0|1>` _(setting · bool · default off)_
-- `debugautoscheduler` *(admin)* — Debug automations scheduler. · `debugautoscheduler <0|1>` _(setting · bool · default off)_
-- `debugautoexec` *(admin)* — Debug automations execution. · `debugautoexec <0|1>` _(setting · bool · default off)_
-- `debugautocondition` *(admin)* — Debug automations conditions. · `debugautocondition <0|1>` _(setting · bool · default off)_
-- `debugautotiming` *(admin)* — Debug automations timing. · `debugautotiming <0|1>` _(setting · bool · default off)_
-- `debugmemory` *(admin)* — Debug memory (parent flag). · `debugmemory <0|1>` _(setting · bool · default off)_
-- `loglink` *(admin)* — Route ESP-IDF logs through the unified output queue (stops UART interleave). · `loglink <0|1>`
-- `debugmemoryheap` *(admin)* — Debug per-task heap (free/min/largest), DRAM low watermark. · `debugmemoryheap <0|1>` _(setting · bool · default off)_
-- `debugmemorystack` *(admin)* — Debug per-task stack watermarks + peak reports. · `debugmemorystack <0|1>` _(setting · bool · default off)_
-- `debugmemorybuffers` *(admin)* — Debug response/cookie buffer sizing diagnostics. · `debugmemorybuffers <0|1>` _(setting · bool · default off)_
-- `debugmqtt` *(admin)* — Debug MQTT (parent flag). · `debugmqtt <0|1> [temp|runtime]`
-- `debugmqttconnection` *(admin)* — Debug MQTT connect/disconnect/TLS/init. · `debugmqttconnection <0|1>` _(setting · bool · default off)_
-- `debugmqttpubsub` *(admin)* — Debug MQTT publish/subscribe + received messages. · `debugmqttpubsub <0|1>` _(setting · bool · default off)_
-- `debugmqttdiscovery` *(admin)* — Debug MQTT Home Assistant auto-discovery. · `debugmqttdiscovery <0|1>` _(setting · bool · default off)_
-- `debugmqttcommands` *(admin)* — Debug MQTT inbound commands + auth. · `debugmqttcommands <0|1>` _(setting · bool · default off)_
-- `debugauthsessions` *(admin)* — Debug auth sessions. · `debugauthsessions <0|1>` _(setting · bool · default off)_
-- `debugauthcookies` *(admin)* — Debug auth cookies. · `debugauthcookies <0|1>` _(setting · bool · default off)_
-- `debugauthlogin` *(admin)* — Debug auth login. · `debugauthlogin <0|1>` _(setting · bool · default off)_
-- `debugauthbootid` *(admin)* — Debug auth boot ID. · `debugauthbootid <0|1>` _(setting · bool · default off)_
+- `debugcommandflow` *(admin)* — Debug command flow. · `debugcommandflow <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugusers` *(admin)* — Debug user management. · `debugusers <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugsystem` *(admin)* — Debug system/boot operations. · `debugsystem <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowstream` *(admin)* — Debug ESP-NOW streaming output. · `debugespnowstream <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowcore` *(admin)* — Debug ESP-NOW core operations. · `debugespnowcore <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowrouter` *(admin)* — Debug ESP-NOW router operations. · `debugespnowrouter <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowmesh` *(admin)* — Debug ESP-NOW mesh operations. · `debugespnowmesh <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowtopo` *(admin)* — Debug ESP-NOW topology discovery. · `debugespnowtopo <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowencryption` *(admin)* — Debug ESP-NOW encryption. · `debugespnowencryption <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugespnowmetadata` *(admin)* — Debug ESP-NOW metadata exchange (REQ/RESP/PUSH). · `debugespnowmetadata <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugautoscheduler` *(admin)* — Debug automations scheduler. · `debugautoscheduler <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugautoexec` *(admin)* — Debug automations execution. · `debugautoexec <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugautocondition` *(admin)* — Debug automations conditions. · `debugautocondition <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugautotiming` *(admin)* — Debug automations timing. · `debugautotiming <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmemory` *(admin)* — Debug memory (parent flag). · `debugmemory <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `loglink` *(admin)* — Route ESP-IDF logs through the unified output queue (stops UART interleave). · `loglink [<0|1|on|off>] (bare = show status)`
+- `debugmemoryheap` *(admin)* — Debug per-task heap (free/min/largest), DRAM low watermark. · `debugmemoryheap <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmemorystack` *(admin)* — Debug per-task stack watermarks + peak reports. · `debugmemorystack <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmemorybuffers` *(admin)* — Debug response/cookie buffer sizing diagnostics. · `debugmemorybuffers <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmqtt` *(admin)* — Debug MQTT (parent flag). · `debugmqtt <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmqttconnection` *(admin)* — Debug MQTT connect/disconnect/TLS/init. · `debugmqttconnection <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmqttpubsub` *(admin)* — Debug MQTT publish/subscribe + received messages. · `debugmqttpubsub <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmqttdiscovery` *(admin)* — Debug MQTT Home Assistant auto-discovery. · `debugmqttdiscovery <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugmqttcommands` *(admin)* — Debug MQTT inbound commands + auth. · `debugmqttcommands <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugauthsessions` *(admin)* — Debug auth sessions. · `debugauthsessions <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugauthcookies` *(admin)* — Debug auth cookies. · `debugauthcookies <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugauthlogin` *(admin)* — Debug auth login. · `debugauthlogin <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugauthbootid` *(admin)* — Debug auth boot ID. · `debugauthbootid <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debughttphandlers` *(admin)* — Debug HTTP handlers. · `debughttphandlers <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debughttprequests` *(admin)* — Debug HTTP requests. · `debughttprequests <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `debughttpresponses` *(admin)* — Debug HTTP responses. · `debughttpresponses <0|1> [temp|runtime]` _(setting · bool · default off)_
@@ -938,21 +938,21 @@ The debug subsystem controls diagnostic logging verbosity across every part of t
 - `settingsmodulesummary` *(admin)* — Show settings module summary.
 - `outdisplay` *(admin)* — Enable/disable display output. · `outdisplay <0|1> [persist|temp]` _(setting · bool · default off)_
 - `outg2` — Enable/disable G2 glasses output. · `outg2 <0|1> - streams CLI output to G2 glasses` _(setting · bool · default off)_
-- `debugg2` *(admin)* — Debug G2 smart glasses BLE operations. · `debugg2 <0|1>` _(setting · bool · default off)_
-- `debugg2lifecycle` *(admin)* — Debug G2 BLE lifecycle (scan/connect/MTU). · `debugg2lifecycle <0|1>` _(setting · bool · default off)_
-- `debugg2protocol` *(admin)* — Debug G2 envelope TX/RX, CRC, fragmentation. · `debugg2protocol <0|1>` _(setting · bool · default off)_
-- `debugg2events` *(admin)* — Debug G2 DevEvents/SysEvents/gestures. · `debugg2events <0|1>` _(setting · bool · default off)_
-- `debugg2pages` *(admin)* — Debug G2 page-swap worker / hijack / lens state. · `debugg2pages <0|1>` _(setting · bool · default off)_
-- `debugg2heartbeat` *(admin)* — Debug G2 heartbeat TX + acks (loud). · `debugg2heartbeat <0|1>` _(setting · bool · default off)_
-- `debugg2dump` *(admin)* — Debug G2 ring-buffer dumps on errors. · `debugg2dump <0|1>` _(setting · bool · default off)_
+- `debugg2` *(admin)* — Debug G2 smart glasses BLE operations. · `debugg2 <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugg2lifecycle` *(admin)* — Debug G2 BLE lifecycle (scan/connect/MTU). · `debugg2lifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugg2protocol` *(admin)* — Debug G2 envelope TX/RX, CRC, fragmentation. · `debugg2protocol <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugg2events` *(admin)* — Debug G2 DevEvents/SysEvents/gestures. · `debugg2events <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugg2pages` *(admin)* — Debug G2 page-swap worker / hijack / lens state. · `debugg2pages <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugg2heartbeat` *(admin)* — Debug G2 heartbeat TX + acks (loud). · `debugg2heartbeat <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugg2dump` *(admin)* — Debug G2 ring-buffer dumps on errors. · `debugg2dump <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `outble` — Enable/disable BLE broadcast output. · `outble <0|1> - streams broadcast output to authenticated BLE clients`
 - `debugsr` *(admin)* — Debug ESP-SR speech recognition (parent flag). · `debugsr <0|1> [temp|runtime]` _(setting · bool · default off)_
-- `debugsrwake` *(admin)* — Debug SR wake word detection events. · `debugsrwake <0|1>` _(setting · bool · default off)_
-- `debugsrcommand` *(admin)* — Debug SR MultiNet command recognition. · `debugsrcommand <0|1>` _(setting · bool · default off)_
-- `debugsrafe` *(admin)* — Debug SR AFE chain (VAD/noise/gain). · `debugsrafe <0|1>` _(setting · bool · default off)_
-- `debugsrlifecycle` *(admin)* — Debug SR init/start/stop verbose. · `debugsrlifecycle <0|1>` _(setting · bool · default off)_
-- `debugsrtuning` *(admin)* — Debug SR auto-tune sweeps + threshold. · `debugsrtuning <0|1>` _(setting · bool · default off)_
-- `debugfmradio` *(admin)* — Debug FM Radio operations. · `debugfmradio <0|1>` _(setting · bool · default off)_
+- `debugsrwake` *(admin)* — Debug SR wake word detection events. · `debugsrwake <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugsrcommand` *(admin)* — Debug SR MultiNet command recognition. · `debugsrcommand <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugsrafe` *(admin)* — Debug SR AFE chain (VAD/noise/gain). · `debugsrafe <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugsrlifecycle` *(admin)* — Debug SR init/start/stop verbose. · `debugsrlifecycle <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugsrtuning` *(admin)* — Debug SR auto-tune sweeps + threshold. · `debugsrtuning <0|1> [temp|runtime]` _(setting · bool · default off)_
+- `debugfmradio` *(admin)* — Debug FM Radio operations. · `debugfmradio <0|1> [temp|runtime]` _(setting · bool · default off)_
 - `memorysampleintervalsec` *(admin)* — Set memory sampling interval in seconds (0=disabled). · `memorysampleintervalsec <0-300>` _(setting · int 0–300 · default 30)_
 - `loglevel` *(admin)* — Set log level (error|warn|info|debug). · `loglevel <error|warn|info|debug>` _(setting · enum · default 3 (debug) · options 0=error, 1=warn, 2=info, 3=debug)_
 - `log` — System-wide logging to file. · `log <start|stop|status|autostart> start ["filepath"] [flags=0xXXXX] [tags=0|1]: Begin system logging filepath: Log file path, quoted (auto-generated if omitted) flags: Debug flags to enable (e.g., flags=0x0203) tags: Prefix lines with category tags (0|1, default 1) stop / status: Stop logging / show logging status autostart [on|off]: Toggle logging auto-start on boot (bare = toggle)`
@@ -1006,15 +1006,15 @@ The users subsystem provides admin-gated account management, authentication, ses
 - `userchangepassword` — Change own password: <currentPass> <newPass> <confirmPass> · `userchangepassword <currentPassword> <newPassword> <confirmPassword>`
 - `userresetpassword` *(admin)* — Reset user password: <username> <newPassword> [0|1] · `userresetpassword <username> <newPassword> [0|1] Optional: 1 = require password change on next login`
 - `useradd` *(admin)* — Create user: <username> <password> [0|1] · `useradd <username> <password> [0|1] Optional: 1 = require new password on next login, 0 = omit`
-- `userlist` *(admin)* — List all users.
+- `userlist` *(admin)* — List all users. (add 'json' for JSON output)
 - `userrequest` — Request account: <user> <pass> [confirm] · `userrequest <username> <password> [confirmPassword]`
 - `usersync` *(admin)* — Sync a user to another device over ESP-NOW. (async; result only on the target device - check its userlist) · `usersync <username> <userPass> <device> <targetAdminUser> <targetAdminPass> <yourAdminPass> Returns OK on delivery; the user is created on the TARGET device (no confirmation returns here) - verify on that device's userlist. targetAdminUser/targetAdminPass = an admin account on the RECEIVING device (validated there). yourAdminPass = your admin password on THIS device; userPass = the synced user's password.`
-- `pendinglist` *(admin)* — List pending user requests.
-- `sessionlist` *(admin)* — List active sessions.
+- `pendinglist` *(admin)* — List pending user requests. (add 'json' for JSON output)
+- `sessionlist` *(admin)* — List active sessions. (add 'json' for JSON output)
 - `sessionrevoke` *(admin)* — Revoke session: <sid|user> [reason] · `sessionrevoke sid <sid> [reason] sessionrevoke user <username> [reason]`
 - `ban` *(admin)* — Permanently ban an IP: <ip> [reason] · `ban <ip> [reason] Blocks all access from the IP until manually unbanned.`
 - `unban` *(admin)* — Remove an IP ban: <ip> · `unban <ip>`
-- `banlist` *(admin)* — List all banned IPs.
+- `banlist` *(admin)* — List all banned IPs. (add 'json' for JSON output)
 - `banuser` *(admin)* — Permanently ban a user account: <username> [reason] · `banuser <username> [reason] Prevents the account from logging in until manually unbanned.`
 - `unbanuser` *(admin)* — Remove a user account ban: <username> · `unbanuser <username>`
 
@@ -1024,8 +1024,8 @@ _Always compiled._
 
 The features subsystem enables or disables compiled-in capabilities at runtime and reports their memory cost. features with no argument lists every feature grouped by category (Network, Display, Sensors, System) with an approximate heap estimate and a status of ON, OFF, or N/C (not compiled in this build); features <id> shows one feature details and features <id> <on|off> toggles it, persisting the change immediately. Only features that are compiled and marked runtime-toggleable can be changed; a few are compile-time only, and some (wifi, oled, i2c, https) are flagged reboot required so the toggle persists but the capability does not actually start or stop until the next restart. featuresetup launches an interactive, admin-only wizard that walks through the same toggles and works from any CLI transport.
 
-- `features` — Show/toggle system features with heap estimates. · `features - List all features features <id> - Show feature details features <id> <on|off> - Enable/disable feature`
-- `featuresetup` *(admin)* — Run the interactive feature configuration wizard. · `featuresetup - Launch the feature toggle wizard (serial + OLED)`
+- `features` — Show/toggle system features with heap estimates. · `features - List all features features <id> - Show feature details features <id> <on|off> - Enable/disable feature features json - JSON capability list`
+- `featuresetup` *(admin)* — Run the interactive feature configuration wizard. · `featuresetup - Launch the feature config wizard (any CLI transport; navigate with n/b/numbers, 'cancel' to abort)`
 
 ### `image` — Image capture and management
 
@@ -1036,7 +1036,7 @@ Captures stills from the camera and manages the saved photo library. capture gra
 - `capture` — Capture and save image: capture [littlefs|sd|both] · `capture [littlefs|lfs|sd|both]`
 - `images` — List saved images: images [littlefs|sd] · `images [sd] [json]`
 - `imagedelete` *(admin)* — Delete image: imagedelete "<path>" · `imagedelete "<path>"`
-- `imagesend` — Send image via ESP-NOW: imagesend <device> ["<path>"] (async send; arrives on the peer, no local result) · `imagesend <device> ["<path>"] Returns OK on dispatch; the image is written to the peer's /espnow/received/ inbox - no completion status returns to the sender.`
+- `imagesend` — Send image via ESP-NOW: imagesend <device> ["<path>"] (async send; arrives on the peer, no local result) · `imagesend <device> ["<path>"] Returns 'Sending <path> to <device>' on dispatch; the image is written to the peer's /espnow/received/ inbox - no completion status returns to the sender.`
 
 ### `map` — Map navigation and waypoints
 
@@ -1044,11 +1044,11 @@ _Requires `ENABLE_MAPS`._
 
 On-device offline map subsystem backed by region map files stored under /maps/ (custom HWMap tile format). A map must be loaded before any lookup works: mapload "<path>" loads a file into PSRAM, maplist shows what is available, map prints the current map region/feature-count/bounds (add json for structured output), and mapunload frees the PSRAM and tile cache. search <name> finds named features in the loaded map, while whereami reports the nearest road and area for the current GPS position and therefore needs both a loaded map and a live GPS fix. Waypoints are persistent user markers managed through waypoint (list/add/del/goto/clear/clearall/rename/notes) and can have files attached via waypointfile/waypointfiles; gpstrack loads, inspects, or clears a recorded GPS breadcrumb track (and rejects tracks that fall outside the loaded map bounds), and maporganize sorts loose files in /maps into subdirectories.
 
-- `map` — Show current map info
+- `map` — Show current map info (add 'json' for JSON output)
 - `mapload` — Load map file: "<path>" · `mapload "<path>"`
 - `mapunload` — Unload current map (free PSRAM on device)
-- `maplist` — List available maps
-- `whereami` — Show current location context
+- `maplist` — List available maps (add 'json' for JSON output)
+- `whereami` — Show current location context (add 'json' for JSON output)
 - `search` — Search map features: <name> · `search <name>`
 - `waypoint` — Manage waypoints: <list|add|del|goto|clear|clearall|rename|notes> · `waypoint [list|add <lat> <lon> [name]|del <index>|goto <index>|clear|clearall|rename <index> <name>|notes <index> <notes>]`
 - `gpstrack` — Manage GPS tracks: <status|load|clear> · `gpstrack [status|load <filepath>|clear]`
@@ -1064,7 +1064,7 @@ Persisted rendering defaults for the maps app, stored under apps.maps and applie
 
 - `mapzoom` *(admin)* — Set default map zoom: <0.5..20.0> · `mapzoom <0.5..20.0>` _(setting · float · default 1.0)_
 - `maplayers` *(admin)* — Set visible layer bitmask: <0..1023> · `maplayers <bitmask 0..1023>` _(setting · int 0–0x3FF · default 0x3FF)_
-- `mapcachekb` *(admin)* — Set tile cache size in KB (reboot to apply) · `mapcachekb <256..4096>` _(setting · int 256–4096 · default 1024)_
+- `mapcachekb` *(admin)* — Set tile cache size in KB (effective on next map load) · `mapcachekb <256..4096>` _(setting · int 256–4096 · default 1024)_
 
 ### `power` — Power management
 
@@ -1082,7 +1082,7 @@ _Requires `ENABLE_OLED_DISPLAY`._
 
 Provides the single admin-only command setgamepadpassword, which opens the gamepad-pattern password setup flow on the OLED screen. A pattern is a sequence of joystick directions that is hashed and stored as the logged-in user password, usable for on-device login. You must already be logged in at the OLED display first (the command errors otherwise); the guided on-screen flow then re-authenticates you, prompts you to enter the new pattern and confirm it, and saves it to your account. This command only launches the OLED mode -- the actual entry and confirmation happen on the device screen.
 
-- `setgamepadpassword` *(admin)* — Set gamepad joystick password (OLED).
+- `setgamepadpassword` *(admin)* — Set gamepad joystick password (requires an active OLED-display login).
 
 ### `even_g2` — Even G2 smart glasses control
 
@@ -1156,11 +1156,11 @@ _Requires `ENABLE_ONDEVICE_LLM`._
 
 On-device large language model that runs a quantized model file entirely on the device (model weights held in PSRAM). A model must be loaded before generation: llmload [file.bin] loads one (bare filenames are looked up on the SD card under /sd/llm then internal /system/llm), llmmodels lists available files, llmunload frees the PSRAM, llmstatus shows engine state, and llmautostart 0|1 / llmdefaultmodel control boot-time loading. Generation is ASYNCHRONOUS: llmgenerate <prompt> returns a session id immediately and the reply is streamed in the background, so you poll llmresult json <offset> repeatedly (each call returns new text, the running total length, and a done flag) until done flips true; llmstop aborts an in-progress generation. The engine keeps a multi-turn conversation: llmclear resets it, llmretry regenerates the last reply (also async), and llmturns json <index> reads back one turn at a time. The many llm* setters (temperature, topp, minp, maxtokens, sentencelimit, hardcap, reppenalty/repwindow, maxcontext, mirostat2/tau/eta, dyntemp, kvprec) are admin-only sampler and KV-cache defaults that persist to flash; kvprec and maxcontext only take effect on the next model load.
 
-- `llmstatus` — Show LLM engine status
+- `llmstatus` — Show LLM engine status (add 'json' for JSON output)
 - `llmload` *(admin)* — Load model [model.bin] · `llmload [filename.bin]`
 - `llmunload` *(admin)* — Unload model and free PSRAM
 - `llmautostart` *(admin)* — Auto-load default model at boot (0|1) · `llmautostart <0|1>` _(setting · bool · default off)_
-- `llmmodels` — List available model files
+- `llmmodels` — List available model files (add 'json' for JSON output)
 - `llmgenerate` — Generate text from prompt · `llmgenerate <prompt text>`
 - `llmresult` — Poll streamed generation (JSON) · `llmresult json <offset>`
 - `llmstop` — Stop in-progress generation
@@ -1178,8 +1178,33 @@ On-device large language model that runs a quantized model file entirely on the 
 - `llmmaxcontext` *(admin)* — Set KV cache context window (0=auto) · `llmmaxcontext <0-4096>` _(setting · int 0–4096 · default 0)_
 - `llmusemirostat2` *(admin)* — Enable/disable Mirostat 2 sampling · `llmusemirostat2 <0|1>` _(setting · bool · default off)_
 - `llmmirostattau` *(admin)* — Set Mirostat target surprise (bits) · `llmmirostattau <1-10>` _(setting · float · default 5.0)_
-- `llmmirostateta` *(admin)* — Set Mirostat learning rate · `llmmirostateta <0.01-0.5>` _(setting · float · default 0.1)_
+- `llmmirostateta` *(admin)* — Set Mirostat learning rate · `llmmirostateta <0.01-1.0>` _(setting · float · default 0.1)_
 - `llmdyntemp` *(admin)* — Enable/disable dynamic temperature · `llmdyntemp <0|1>` _(setting · bool · default off)_
 - `llmdefaultmodel` *(admin)* — Set default model filename · `llmdefaultmodel <filename.bin>` _(setting · string · default "model.bin")_
 - `llmminp` *(admin)* — Set min-p sampling floor (0=off) · `llmminp <0.0-1.0>` _(setting · float · default 0.0)_
 - `llmkvprec` *(admin)* — KV cache precision (0=FP32,1=FP16,2=INT8) · `llmkvprec <0..2> (0=FP32,1=FP16,2=INT8; reload model to apply)` _(setting · enum · default 0 (FP32) · options 0=FP32, 1=FP16, 2=INT8)_
+
+### `settingsedit` — Per-field settings save commands
+
+_Always compiled._
+
+Static CLI commands the web/OLED settings screen uses to persist individual settings fields that have no dedicated module command. Each writes one setting via handleSettingCommand; the value is read live or applied on next start. Fields that need a live apply action are routed to their module command instead of getting one of these.
+
+- `sessionidleweb` *(admin)* — Set web CLI session idle-logout (min) · `sessionidleweb <0-1440>` _(setting · int 0–1440 · default 60)_
+- `sessionidleserial` *(admin)* — Set serial session idle-logout (min) · `sessionidleserial <0-1440>` _(setting · int 0–1440 · default 60)_
+- `sessionidleble` *(admin)* — Set BLE session idle-logout (min) · `sessionidleble <0-1440>` _(setting · int 0–1440 · default 15)_
+- `sessionidledisplay` *(admin)* — Set OLED session idle-logout (min) · `sessionidledisplay <0-1440>` _(setting · int 0–1440 · default 60)_
+- `powerdim` *(admin)* — Set display dim level (%) · `powerdim <0-100>` _(setting · int 0–100 · default 30)_
+- `logcategorytags` *(admin)* — Set log category-tags flag (persist only) · `logcategorytags <0|1>` _(setting · bool · default on)_
+- `tofi2cclockhz` *(admin)* — Set ToF I2C clock (Hz) · `tofi2cclockhz <50000-400000>` _(setting · int 50000–400000 · default 200000)_
+- `presencedevicepollms` *(admin)* — Set presence sensor poll interval (ms) · `presencedevicepollms <50-5000>` _(setting · int 50–5000 · default 100)_
+- `apdsdevicepollms` *(admin)* — Set APDS poll interval (ms) · `apdsdevicepollms <value>` _(setting · int 50–5000 · default 200)_
+- `fmradiodevicepollms` *(admin)* — Set FM radio poll interval (ms) · `fmradiodevicepollms <value>` _(setting · int 100–5000 · default 250)_
+- `gpsdevicepollms` *(admin)* — Set GPS poll interval (ms) · `gpsdevicepollms <value>` _(setting · int 50–10000 · default 200)_
+- `sensorlogpath` *(admin)* — Set default sensor-log file path · `sensorlogpath <"/path">` _(setting · string · default "/logs/sensors/sensors.txt")_
+- `eirequirelabels` *(admin)* — Set Edge Impulse require-labels flag · `eirequirelabels <0|1>` _(setting · bool · default on)_
+- `eimaxdetections` *(admin)* — Set Edge Impulse max detections · `eimaxdetections <value>` _(setting · int 1–10 · default 5)_
+- `eiinputsize` *(admin)* — Set Edge Impulse input size · `eiinputsize <value>` _(setting · int 48–320 · default 96)_
+- `eiinterval` *(admin)* — Set Edge Impulse inference interval (ms) · `eiinterval <100-10000>` _(setting · int 100–10000 · default 1000)_
+- `srautostart` *(admin)* — Set ESP-SR auto-start flag · `srautostart <0|1>` _(setting · bool · default off)_
+- `srmodelsource` *(admin)* — Set ESP-SR model source · `srmodelsource <value>` _(setting · enum · default 0 (Partition) · options 0=Partition, 1=SD, 2=LittleFS)_

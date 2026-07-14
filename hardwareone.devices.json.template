@@ -4,13 +4,26 @@
     "When this file exists the gateway uses it; otherwise it falls back to a single device in hardwareone.env.",
     "Device names are free identifiers (NOT rooms) - a device's room/location/purpose lives on the device",
     "(espnowroom / espnowzone / espnowtags) and in the agent's memory note, never here.",
-    "role: master | worker | backup. Exactly one DIRECT master = the HTTP entry point the agent talks to,",
-    "and the jumping-off point for the mesh. A 'backup' (also direct) becomes the default if the master is down.",
+    "role: master | worker | backup. A DIRECT master is an HTTP entry point the agent talks to AND the",
+    "jumping-off point for the mesh. You may configure SEVERAL co-equal direct masters (each controllable",
+    "by name); 'default' picks which one bare/un-targeted commands use. If you omit 'default' with 2+ masters",
+    "the gateway auto-picks the first by name (ASCII order, so uppercase sorts before lowercase) and notes",
+    "it. A 'backup' (also direct) becomes the",
+    "default if the master is down.",
+    "Two co-equal HTTP endpoints (no shared mesh)? Give BOTH a url and role:master, e.g.:",
+    "  \"node-a\": {\"url\":\"192.168.1.42\",\"role\":\"master\",\"user\":\"admin\",\"pass\":\"...\"},",
+    "  \"node-c\": {\"url\":\"192.168.1.77\",\"role\":\"master\",\"user\":\"admin\",\"pass\":\"...\"}",
+    "and set \"default\" to the one bare commands should use; reach the other by name.",
     "Credentials: each DIRECT device needs its own url + user + pass. If ALL your devices truly share one",
     "login you can move user/pass up into 'defaults'; otherwise keep them per device (as below).",
-    "via: \"mesh\" marks a device with NO direct HTTP - it is reached only through the master's espnowremote.",
-    "A mesh device needs no url/user/pass here; it shows up as access:mesh, and a direct call to it is",
-    "rejected with a pointer to relay through the master.",
+    "via: \"mesh\" marks a device with NO direct HTTP - it is reached by relaying espnowremote through the",
+    "master. It still needs user + pass (an account ON THE PEER) so the gateway can run espnowremote for you;",
+    "it needs NO url. It shows up as access:mesh and the agent addresses it by name like any device. NOTE:",
+    "espnowremote splits arguments on spaces, so a mesh device's user/pass must be space-free.",
+    "description (optional, any device): a short operator note about that device's HARDWARE/SOFTWARE setup",
+    "- e.g. 'ESP32-S3, thermal camera + mic + on-device LLM' or 'battery ToF node, mesh-only'. It is shown",
+    "to the agent via hardwareone_devices (names/roles/descriptions are the ONLY things the agent sees -",
+    "never url/user/pass). Room/location/purpose still live on the device + memory note, NOT here.",
     "allowSelfSigned: true accepts a device's self-signed HTTPS cert (trusted LAN); or pin 'cacert'.",
     "Advanced optional per-device fields: connectTimeout, timeout, timeoutLong, authProbe (seconds / path).",
     "Lines in this _help array are ignored by the parser - delete them or keep them, your choice."
@@ -18,7 +31,7 @@
   "default": "node-a",
   "defaults": { "allowSelfSigned": true },
   "devices": {
-    "node-a": { "url": "192.168.1.42", "role": "master", "user": "admin", "pass": "changeme" },
-    "node-b": { "role": "worker", "via": "mesh" }
+    "node-a": { "url": "192.168.1.42", "role": "master", "user": "admin", "pass": "changeme", "description": "ESP32-S3 - thermal camera, mic, on-device LLM" },
+    "node-b": { "role": "worker", "via": "mesh", "user": "node-b", "pass": "changeme", "description": "battery ToF sensor node, mesh-only" }
   }
 }

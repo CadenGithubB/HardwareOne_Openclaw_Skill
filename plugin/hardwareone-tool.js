@@ -15,12 +15,28 @@ const HW1_ENV = process.env.HW1_ENV || `${process.env.HOME}/.openclaw/hardwareon
 
 const TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
+const RELAY_TIMEOUT_MS = 15_000;      // how long to poll for a mesh peer's async reply
+const RELAY_POLL_INTERVAL_MS = 800;   // gap between espnowmessages polls
+const MSG_CMD_RESULT = 6;             // espnowmessages `type` value for a remote-command result
 
 const SAFE_CLI_RE = /^[\x20-\x7E]+$/;
 const SAFE_DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const UNREACHABLE_RE = /could not reach|connection refused|timed out|resolve host|TLS\/certificate/i;
 
 const truthy = (v) => v === true || v === 1 || v === "1" || v === "true";
+
+// Operator-authored, agent-visible note about a device's hardware/software setup. The
+// registry is host-only (trusted input), but we still collapse control chars to spaces and
+// cap the length so the hardwareone_devices payload stays tidy and single-line.
+const MAX_DESCRIPTION_LEN = 280;
+function cleanDescription(v) {
+  if (v == null) return "";
+  const s = String(v).replace(/[\x00-\x1F\x7F]+/g, " ").replace(/\s+/g, " ").trim();
+  if (s.length <= MAX_DESCRIPTION_LEN) return s;
+  let cut = s.slice(0, MAX_DESCRIPTION_LEN - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1); // don't sever a surrogate pair
+  return cut.trimEnd() + "…";
+}
 
 // ── device registry ──────────────────────────────────────────────────────────
 // A device is either reached DIRECTLY over HTTP (url + creds), or only via the master's
@@ -34,8 +50,11 @@ function normalizeDevice(name, raw, defaults) {
   const role = String(m.role || "worker").toLowerCase();
   const via = String(m.via || "direct").toLowerCase();
   if (via === "mesh") {
-    // mesh-only: no direct connection; reached through the master's espnowremote.
-    return { name, via: "mesh", role };
+    // mesh-only: no direct HTTP. Reached by relaying `espnowremote` through the master,
+    // which needs an account ON THE PEER (user/pass) — injected host-side, never seen by
+    // the agent. So a mesh device needs creds too (espnowremote can't run without them).
+    if (!m.user || !m.pass) return null;
+    return { name, via: "mesh", role, user: String(m.user), pass: String(m.pass), description: cleanDescription(m.description) };
   }
   if (!m.url || !m.user || !m.pass) return null; // a direct device needs all three
   return {
@@ -49,6 +68,7 @@ function normalizeDevice(name, raw, defaults) {
     timeout: m.timeout,
     timeoutLong: m.timeoutLong,
     authProbe: m.authProbe,
+    description: cleanDescription(m.description),
   };
 }
 
@@ -73,12 +93,15 @@ async function readJsonRegistry(warnings) {
     if (!SAFE_DEVICE_RE.test(name)) { warnings.push(`ignored invalid device name '${name}'`); continue; }
     const d = normalizeDevice(name, raw && typeof raw === "object" ? raw : {}, defaults);
     if (!d) {
-      warnings.push(`device '${name}' is missing url/user/pass — skipped (use "via":"mesh" if it's reached through the master)`);
+      warnings.push(`device '${name}' is missing required fields — a direct device needs url+user+pass; a mesh device ("via":"mesh") needs user+pass (for the espnowremote relay) — skipped`);
       continue;
     }
     if (d.via === "mesh" && d.role === "master") {
       warnings.push(`device '${name}' is via:mesh but role:master — the master must be directly reachable; treating it as a worker`);
       d.role = "worker";
+    }
+    if (d.via === "mesh" && (/\s/.test(d.user) || /\s/.test(d.pass))) {
+      warnings.push(`mesh device '${name}' has whitespace in its credentials — espnowremote splits arguments on spaces, so the relay will fail; use space-free user/pass`);
     }
     devices[name] = d;
   }
@@ -112,6 +135,7 @@ async function readLegacyDevice(warnings) {
 // Build { devices, default, warnings }. JSON registry wins; legacy flat env is the fallback.
 async function buildRegistry() {
   const warnings = [];
+  const notes = [];
   const reg = await readJsonRegistry(warnings);
   if (reg && Object.keys(reg.devices).length > 0) {
     const { devices, declaredDefault } = reg;
@@ -125,17 +149,25 @@ async function buildRegistry() {
       def = undefined;
     }
     if (!def) {
-      if (directNames.length === 0) warnings.push('no directly-reachable device — at least one needs url+user+pass to be the HTTP entry point (the master)');
-      else if (masters.length === 1) def = masters[0];
-      else if (directNames.length === 1) def = directNames[0];
-      else if (masters.length === 0) warnings.push('no device has role "master"; set "default"');
-      else warnings.push(`multiple masters (${masters.join(", ")}); set "default"`);
+      if (directNames.length === 0) {
+        warnings.push('no directly-reachable device — at least one needs url+user+pass to be the HTTP entry point (the master)');
+      } else {
+        // Two or more co-equal direct devices is a SUPPORTED config, not a misconfiguration.
+        // Deterministically pick an implicit default so bare (un-targeted) commands always
+        // resolve. Prefer a master, else any direct device; choose by SORTED name so the pick
+        // is stable regardless of JSON key order (numeric-like keys don't keep insertion order).
+        const pool = (masters.length ? masters : directNames).slice().sort();
+        def = pool[0];
+        if (pool.length > 1) {
+          notes.push(`multiple co-equal direct devices (${pool.join(", ")}); bare commands use '${def}' — set "default" to choose one, and name each device explicitly to avoid ambiguity`);
+        }
+      }
     }
-    return { devices, default: def || null, warnings };
+    return { devices, default: def || null, warnings, notes };
   }
   const legacy = await readLegacyDevice(warnings);
-  if (legacy) return { devices: { default: legacy }, default: "default", warnings };
-  return { devices: {}, default: null, warnings };
+  if (legacy) return { devices: { default: legacy }, default: "default", warnings, notes };
+  return { devices: {}, default: null, warnings, notes };
 }
 
 // A backup must itself be directly reachable (it becomes the HTTP endpoint on failover).
@@ -199,10 +231,103 @@ function isUnreachable(res) {
   return res.exitCode === 7 || (res.stderr && UNREACHABLE_RE.test(res.stderr));
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Pull the JSON object out of a CLI response (which may carry a `[CMD] …-> OK` line
+// before or after the payload).
+function extractJson(text) {
+  const i = text.indexOf("{");
+  const j = text.lastIndexOf("}");
+  if (i < 0 || j < i) return null;
+  try { return JSON.parse(text.slice(i, j + 1)); } catch { return null; }
+}
+
+// ── mesh relay ────────────────────────────────────────────────────────────────
+// A mesh-only peer has no direct HTTP. To run a command on it we relay through the
+// master: `espnowremote <peer> <peer-user> <peer-pass> <cmd>` (the peer's own account,
+// injected host-side — the agent never sees it), then poll `espnowmessages json` for the
+// async reply (type=MSG_CMD_RESULT, correlated by reqId, reassembled from piece/of frames).
+function relayMaster(registry) {
+  const m = registry.default ? registry.devices[registry.default] : null;
+  return m && m.via === "direct" ? m : null;
+}
+
+// Poll the master's message buffer for one espnowremote reply. Walks forward by seq
+// (each message seen once), reassembling fragments in piece order once all `of` arrive.
+async function pollMeshResult(master, mac, reqId) {
+  const deadline = Date.now() + RELAY_TIMEOUT_MS;
+  const pieces = new Map(); // piece (1-based) -> text
+  let total = null;
+  let cursor = 0;
+  const macArg = mac ? ` ${mac}` : "";
+  while (Date.now() < deadline) {
+    let page;
+    try { page = await runHw1(master, [`espnowmessages json ${cursor}${macArg}`]); }
+    catch { await sleep(RELAY_POLL_INTERVAL_MS); continue; }
+    const parsed = extractJson(page.stdout || "");
+    const msgs = parsed && Array.isArray(parsed.messages) ? parsed.messages : [];
+    let advanced = false;
+    for (const m of msgs) {
+      if (typeof m.seq === "number" && m.seq > cursor) { cursor = m.seq; advanced = true; }
+      if (m.reqId === reqId && m.type === MSG_CMD_RESULT && m.sent === false) {
+        pieces.set(Number(m.piece) || 1, String(m.msg == null ? "" : m.msg));
+        if (m.of) total = Number(m.of);
+      }
+    }
+    if (total != null && pieces.size >= total) {
+      let text = "";
+      for (let p = 1; p <= total; p++) text += pieces.get(p) || "";
+      return { text: text.length ? text : "(empty reply)" };
+    }
+    // a full page may mean more already-buffered messages above the cursor — keep paging;
+    // otherwise we've caught up, so wait before checking for new arrivals.
+    if (msgs.length >= 8 && advanced) continue;
+    await sleep(RELAY_POLL_INTERVAL_MS);
+  }
+  return { timedOut: true };
+}
+
+// Relay one CLI command to a mesh peer and return its reply (or a clean timeout/error).
+async function relayMeshCommand(registry, peer, command) {
+  const master = relayMaster(registry);
+  if (!master) return errorResult(`cannot reach mesh device '${peer.name}': no direct master is configured to relay through`);
+  if (/\s/.test(peer.user) || /\s/.test(peer.pass)) {
+    return errorResult(`mesh device '${peer.name}' has whitespace in its credentials; espnowremote can't pass those — set space-free user/pass in the registry`);
+  }
+  let res;
+  try { res = await runHw1(master, [`espnowremote ${peer.name} ${peer.user} ${peer.pass} ${command}`]); }
+  catch (err) { return errorResult(`relay to '${peer.name}' via '${master.name}' failed: ${String(err && err.message ? err.message : err)}`); }
+  const out = ((res.stdout || "") + (res.stderr || "")).trim();
+  const tag = `[via ${master.name} → ${peer.name}] `;
+  const reqIdMatch = out.match(/reqId\s+(\d+)/i);
+  if (res.exitCode !== 0 || !reqIdMatch) {
+    // dispatch failed (not paired, encryption off, bad usage, self-target, …) — surface it
+    return { content: [{ type: "text", text: tag + (out || "(no output)") }], details: { device: peer.name, via: "mesh", relay: master.name, dispatchFailed: true } };
+  }
+  const reqId = Number(reqIdMatch[1]);
+  const macMatch = out.match(/\b([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})\b/);
+  const result = await pollMeshResult(master, macMatch ? macMatch[1] : "", reqId);
+  if (result.timedOut) {
+    return { content: [{ type: "text", text: tag + `delivered, but no reply within ${RELAY_TIMEOUT_MS / 1000}s — the peer may be offline, out of range, or the command produced no output.` }], details: { device: peer.name, via: "mesh", relay: master.name, timedOut: true } };
+  }
+  return { content: [{ type: "text", text: tag + result.text }], details: { device: peer.name, via: "mesh", relay: master.name, reqId } };
+}
+
+// "Ping" a mesh peer = the synchronous ESP-NOW reachability probe, run on the master.
+async function relayMeshProbe(registry, peer) {
+  const master = relayMaster(registry);
+  if (!master) return errorResult(`cannot reach mesh device '${peer.name}': no direct master to relay through`);
+  try {
+    const r = await runHw1(master, [`espnowprobe ${peer.name}`]);
+    const out = ((r.stdout || "") + (r.stderr || "")).trim() || "(no output)";
+    return { content: [{ type: "text", text: `[via ${master.name} → ${peer.name}] ${out}` }], details: { device: peer.name, via: "mesh", relay: master.name } };
+  } catch (err) { return errorResult(String(err && err.message ? err.message : err)); }
+}
+
 // Resolve the target device, run, and fail over to a backup ONLY when the implicit
 // default (the master) is unreachable. An explicitly named device is never failed over.
-// A mesh-only device has no direct connection — calling it directly is rejected with
-// guidance to relay through the master (no silent rerouting).
+// A mesh-only device has no direct HTTP — its commands are relayed through the master via
+// espnowremote (creds injected host-side; the async reply is polled back).
 async function runOnDevice(requestedDevice, argv) {
   const registry = await buildRegistry();
   if (Object.keys(registry.devices).length === 0) {
@@ -217,13 +342,10 @@ async function runOnDevice(requestedDevice, argv) {
       return errorResult(`unknown device '${requestedDevice}'. Configured: ${Object.keys(registry.devices).join(", ")}`);
     }
     if (device.via === "mesh") {
-      const master = registry.default || "the master";
-      return errorResult(
-        `'${requestedDevice}' is mesh-only — reach it through the master '${master}' over the ESP-NOW ` +
-        `system (run the command on '${master}' via hardwareone_cli; results are async via espnowmessages). ` +
-        `Use the espnow* command that fits the task: espnowrequestmeta (a peer's metadata), espnowremote ` +
-        `(run a CLI command on it), espnowfetch/espnowsendfile (files). Not sure which? Run 'help espnow' ` +
-        `on '${master}', or search the catalog for 'espnow' — don't assume it's always espnowremote.`);
+      // mesh peer: relay through the master (creds injected host-side; async reply polled back)
+      if (argv.length === 1 && argv[0] === "--ping") return relayMeshProbe(registry, device);
+      if (argv.length === 1 && !argv[0].startsWith("--")) return relayMeshCommand(registry, device, argv[0]);
+      return errorResult(`'${requestedDevice}' is a mesh device — only CLI commands can be relayed to it`);
     }
   } else {
     if (!registry.default) {
@@ -279,7 +401,7 @@ function validDeviceParam(device) {
 
 const DEVICE_PARAM = {
   type: "string",
-  description: "Optional device name (from hardwareone_devices). Omit to use the default master. A device shown with access:mesh can't be called directly — reach it via the master's ESP-NOW system (the right espnow* command for the task: espnowrequestmeta, espnowremote, espnowfetch, …; see help espnow).",
+  description: "Optional device name (from hardwareone_devices). Omit to use the default device; when hardwareone_devices lists more than one direct device they are co-equal targets, so name the one you mean rather than relying on the default for an ambiguous request. A device shown with access:mesh is relayed through the master automatically — address it by name exactly like a direct device; the relay is async, so it can take a few seconds and reports cleanly if the peer is offline.",
 };
 
 export function createHardwareoneTools() {
@@ -288,7 +410,7 @@ export function createHardwareoneTools() {
       name: "hardwareone_ping",
       label: "HardwareOne Ping",
       description:
-        "Health-check a HardwareOne device — the default master, or the one named by `device`. " +
+        "Health-check a HardwareOne device — the default device, or the one named by `device`. " +
         "Returns hostname, MAC, firmware version.",
       parameters: { type: "object", properties: { device: DEVICE_PARAM }, required: [] },
       async execute(_toolCallId, params) {
@@ -302,9 +424,10 @@ export function createHardwareoneTools() {
       label: "HardwareOne CLI",
       description:
         "Run a HardwareOne CLI command (e.g. 'status', 'features', 'temperature') on the default " +
-        "master, or on the device named by `device`. Capabilities vary per device — run 'features' " +
-        "first on an unfamiliar one. To reach a mesh-only device, run the right espnow* command on the " +
-        "master (e.g. espnowrequestmeta for metadata; run 'help espnow' if unsure — don't assume espnowremote).",
+        "device, or on the device named by `device` — including access:mesh devices, which are relayed " +
+        "through the master automatically (just name them; the relay is async). Capabilities vary per " +
+        "device — run 'features' first on an unfamiliar one, and check hardwareone_devices for the " +
+        "operator's per-device description.",
       parameters: {
         type: "object",
         properties: {
@@ -330,10 +453,11 @@ export function createHardwareoneTools() {
       name: "hardwareone_devices",
       label: "HardwareOne Devices",
       description:
-        "List the configured HardwareOne devices with name, role (master/worker/backup), and access " +
-        "('direct' = reachable over HTTP, 'mesh' = reached only through the master's espnowremote). " +
-        "Names + roles only, never addresses or credentials. Pass {\"probe\": true} to also report " +
-        "which DIRECT devices are online. What each device IS lives in your memory (search 'hardwareone').",
+        "List the configured HardwareOne devices with name, role (master/worker/backup), access " +
+        "('direct' = reachable over HTTP, 'mesh' = relayed through the master automatically), and any " +
+        "operator-written `description` of that device's hardware/software setup. Names, roles + " +
+        "descriptions only — never addresses or credentials. Pass {\"probe\": true} to also report " +
+        "which DIRECT devices are online. What each device IS also lives in your memory (search 'hardwareone').",
       parameters: {
         type: "object",
         properties: { probe: { type: "boolean", description: "Also ping each direct device to report online status (slower)." } },
@@ -346,12 +470,17 @@ export function createHardwareoneTools() {
           const why = registry.warnings.length ? " — " + registry.warnings.join("; ") : "";
           return errorResult(`no HardwareOne devices configured${why}`);
         }
-        let devices = names.map((n) => ({
-          name: n,
-          role: registry.devices[n].role,
-          access: registry.devices[n].via,
-          default: n === registry.default,
-        }));
+        let devices = names.map((n) => {
+          const dev = registry.devices[n];
+          const entry = {
+            name: n,
+            role: dev.role,
+            access: dev.via,
+            default: n === registry.default,
+          };
+          if (dev.description) entry.description = dev.description;
+          return entry;
+        });
         if (params && params.probe) {
           devices = await Promise.all(devices.map(async (d) => {
             if (d.access === "mesh") return d; // can't HTTP-ping a mesh-only device
@@ -365,6 +494,7 @@ export function createHardwareoneTools() {
         }
         const payload = { count: devices.length, default: registry.default, devices };
         if (registry.warnings.length) payload.warnings = registry.warnings;
+        if (registry.notes && registry.notes.length) payload.notes = registry.notes;
         return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], details: payload };
       },
     },

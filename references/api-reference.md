@@ -39,7 +39,7 @@ The complete, always-current command list is in `{baseDir}/references/cli-comman
 **Sensor Logging:** sensorlog start, sensorlog stop, sensorlog status, sensorlog format, sensorlog maxsize, sensorlog rotations, sensorlog sensors
 **Maps:** maplist, mapload, mapunload, map, whereami, search, waypoint, gpstrack, gpslog
 **Images:** capture, images, imageview, imagedelete, imagesend
-**Power:** power, power mode, power auto, battery status, battery calibrate(admin)
+**Power:** power, power mode, power auto, batterystatus, batterycalibrate(admin), batterylog
 **Settings:** wifiautoreconnect, ntpserver, tzoffsetminutes, httpAutoStart, httpsEnabled, webclihistorysize, beginwrite, savesettings
 **Debug:** debug<flagname> <0|1> (see "Debug Flags" below)
 **Features:** features, featuresetup(admin)
@@ -589,8 +589,9 @@ gpslog [interval_ms]            - Start GPS logging
 power                           - Power mode status
 power mode <mode>               - Set power mode
 power auto                      - Auto power management
-battery status                  - Voltage, charge, status
-battery calibrate               - Recalibrate ADC
+batterystatus                   - Battery voltage, charge %, charging state (one word; requires the battery feature)
+batterycalibrate                - Recalibrate the battery sensor (admin)
+batterylog                      - Battery time-series CSV log: on/off/interval/tail/clear
 ```
 
 ### Settings

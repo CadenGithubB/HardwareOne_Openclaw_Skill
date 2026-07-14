@@ -3,6 +3,36 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Two co-equal direct HTTP endpoints.** Configure several `role: master` direct devices in
+  `hardwareone.devices.json` and control each by name — the transport layer already isolates
+  their sessions/credentials per device. `buildRegistry` now deterministically picks an implicit
+  default when `default` is omitted — the first `role: master` direct device by name (or the first
+  direct device if none is a master), stable regardless of JSON key order — so bare/un-targeted
+  commands no longer hard-fail with two masters. Two
+  co-equal masters is reported as an informational `notes` entry (surfaced by
+  `hardwareone_devices`) instead of a "multiple masters" warning that framed a valid setup as a
+  misconfiguration.
+- **Per-device `description`.** An optional operator-written string on any device (direct or
+  mesh) describing its hardware/software setup; surfaced to the agent via `hardwareone_devices`
+  (still never url/user/pass). Control characters are collapsed to spaces and the value is
+  capped at 280 characters.
+- **Automatic mesh relay.** A `via: "mesh"` device is now addressed by name exactly like a
+  direct device — the gateway relays the command through the master (`espnowremote`, peer
+  credentials injected host-side) and polls the async reply back, instead of rejecting the call
+  with a pointer to relay manually. `hardwareone_ping` on a mesh device runs the ESP-NOW
+  reachability probe. Mesh devices now require `user`+`pass` in the registry (for the relay),
+  which must be space-free.
+
+### Changed
+- Agent-facing copy no longer presumes a single master: `SKILL.md` "Multiple devices",
+  `DEVICE_PARAM`, and the ping/cli/devices tool descriptions refer to "the default device" and
+  guide the agent to name each co-equal target (and to read the operator `description`).
+- `hardwareone.devices.json.template`: documents co-equal masters, the `description` field, and
+  the mesh `user`/`pass` requirement; the worked examples carry descriptions.
+
 ## [1.4.0] — 2026-06-28
 
 CLI-only: the agent now does everything through `hardwareone_cli`. The `hardwareone_get`

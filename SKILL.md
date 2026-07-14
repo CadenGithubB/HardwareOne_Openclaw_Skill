@@ -20,7 +20,7 @@ An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C 
 
 | Tool | Parameters | What it does |
 | ---- | ---------- | ------------ |
-| `hardwareone_ping` | `{ "device"?: "<name>" }` | Health-check a device (the default master, or the named one). Returns hostname, MAC, firmware version. |
+| `hardwareone_ping` | `{ "device"?: "<name>" }` | Health-check a device (the default device, or the named one). Returns hostname, MAC, firmware version. |
 | `hardwareone_cli`  | `{ "command": "<cmd>", "device"?: "<name>" }` | Run a device CLI command — e.g. `{"command": "thermalread"}`. This is how you do everything. |
 | `hardwareone_devices` | `{ "probe"?: true }` | List configured devices (names + roles). `probe` also reports which are online. |
 
@@ -32,29 +32,38 @@ An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C 
 
 ## Multiple devices
 
-There may be one or more HardwareOne devices. Use `hardwareone_devices` to see them (names + roles); **more than one means multi-device mode.**
+There may be one or more HardwareOne devices. Use `hardwareone_devices` to see them (names, roles, and any operator `description`); **more than one means multi-device mode.**
 
-- **Targeting.** Commands with no `device` hit the **master** (the default). Target a specific one by passing `device: "<name>"` to `hardwareone_cli` / `hardwareone_ping`. You never see or need IPs or credentials — only names.
-- **Roles.** `master` = the default and the mesh relay; `backup` = takes over automatically if the master is unreachable; the rest are `worker`s. The role from `hardwareone_devices` is the configured hint — the device's *live* mesh role is `espnowmeshrole` / `espnowmeshstatus`; if they disagree, note the drift.
-- **Capabilities differ per device.** Run `features` on each device you use — don't assume one device's catalog applies to another (different sensors, different firmware).
+- **Targeting.** A command with no `device` goes to the **default** device. When `hardwareone_devices` shows more than one `direct` device, they are **co-equal control targets** — name the one you mean with `device: "<name>"`, and for an ambiguous request ("restart it", "read the temperature") ask which device or act on each, rather than assuming the default. (If no `default` is configured, the gateway picks a deterministic one for un-targeted commands — the first `master` by name, or the first direct device if none is a master — and, when more than one candidate exists, flags the pick in the `notes` field. Treat the `default` that `hardwareone_devices` reports as authoritative, not as "the primary".) You never see or need IPs or credentials — only names.
+- **Roles.** `master` = a direct HTTP entry point and the default for un-targeted commands — you can configure **several co-equal `master`s**, each fully controllable by name (`worker` does **not** mean less-capable); `backup` = a direct device that takes over automatically if the default master is unreachable; mesh peers are reached *through* the master. These roles are configuration hints — a device's *live* mesh role is `espnowmeshrole` / `espnowmeshstatus`; if they disagree, note the drift.
+- **Capabilities differ per device.** Run `features` on each device you use — don't assume one device's catalog applies to another (different sensors, different firmware). `hardwareone_devices` may also carry an operator-written **`description`** of a device's hardware/software setup (which build, which sensors are attached, quirks) — read it before choosing a device or command. It complements `features`; it doesn't replace running `features` on an unfamiliar device.
 - **What each device *is* lives in your memory, not here.** At session start, find your topology note with `note_search hardwareone` (locations, roles, sensors, which peers are mesh-only); read it, and update it — durable facts only, no IPs or live status — when devices change.
-- **Mesh-only devices** show up in `hardwareone_devices` with `access: "mesh"` — no direct connection. Reach them through the **master** over the **ESP-NOW system**: run the command on the master via `hardwareone_cli`, results are async via `espnowmessages`. **Pick the right `espnow*` command for the task** — `espnowrequestmeta` for a peer's metadata, `espnowremote` to run a CLI command on it, `espnowfetch`/`espnowsendfile` for files. **Don't assume it's always `espnowremote`** — if unsure, run `help espnow` on the master or search the catalog for `espnow`.
+- **Mesh devices** show up in `hardwareone_devices` with `access: "mesh"`. Address them **by name, exactly like a direct device** — `hardwareone_cli` with `device: "<name>"` — and the gateway relays the command through the master for you (it injects the peer's credentials host-side, runs `espnowremote`, and waits for the reply). The relay is **async**, so it may take a few seconds and reports cleanly if the peer is offline. You do **not** run `espnowremote` yourself for ordinary commands. The `espnow*` commands stay available for genuinely mesh-specific tasks — topology (`espnowmeshtopo`), peer metadata (`espnowrequestmeta`), file transfer (`espnowfetch`/`espnowsendfile`).
 
 ## Workflow
 
 ### 1. Find the right command — search the catalog; never web-search
+
+**A command that LISTS is not a command that READS.** `sensors`, `sensorinfo`, `devices`, `discover`, `features`, `i2cscan` — and any "list/show/detect" command — only tell you what hardware *exists*; they can **never** return a live value, whatever flags, filters, or addresses you add. To READ a value, run that thing's **read** command:
+- battery charge / voltage → **`batterystatus`** (one word; **not** `sensors`, and **not** `voltage` — `voltage` is a power-draw estimate, not the battery)
+- ESP32 chip temperature → **`temperature`**
+- any I2C sensor (thermal, IMU, ToF, GPS, …) → **`open<sensor>` then `<sensor>read`** (e.g. `openthermal` → `thermalread`)
+
+If a command gave you a list when you wanted a value, running it again with different arguments will never help — you ran the wrong *kind* of command. Find the read command.
 
 `references/cli-commands.generated.md` is the **complete, authoritative** list of every command (with its admin flag, argument syntax, feature gate, and — for config commands — value type/range/default). Settings and their commands are in `references/settings.generated.md`.
 
 When you need a command — or one didn't do what you expected — work in this order:
 
 1. **Search the catalog by keyword.** Map the task to a word and look it up: peer metadata → search `meta` (you'll find `espnowrequestmeta`); a sensor → its name; a setting → its area. The command you need is almost always already there.
-2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments. The top-level `help` lists **modules** (categories like `battery`, `system`, `power`), **not** commands — a module name is not runnable on its own, so don't run `battery` or `system`; run `help <module>` to see its real commands (e.g. `help battery` → `battery status`).
+2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments. The top-level `help` lists **modules** (categories like `battery`, `system`, `power`), **not** commands — a module name is not runnable on its own, so don't run `battery` or `system`; run `help <module>` to see its real commands — and note most are a **single word**, not `<module> <subcommand>` (e.g. the `battery` module's command is `batterystatus`, not `battery status`; `espnow` → `espnowstatus`).
 3. Then pass the exact command name to `hardwareone_cli`.
 
 **Never web-search** for HardwareOne commands, errors, or behavior — this is a private device with no public documentation, so a web search returns nothing useful and only wastes turns. The catalog and the device's own `help`/`Usage:` output are the only sources of truth. If a command isn't in the catalog, it does not exist — don't invent or guess one.
 
 **When something fails, do NOT guess again — go to `help`.** If a command errors, returns the wrong thing, or you're unsure what to run next, do **not** fire off another command or `/api/...` path at random. Stop, run `help <module>` on the device (or re-search the catalog), find the *right* command, then retry. Two failed or off-target attempts in a row means you're guessing — switch to `help`; a third guess just wastes turns. **Never** fall back to fetching an `/api/...` path — there is no API surface for you; the answer is always another CLI command.
+
+**A clean exit / `OK` is NOT the same as getting your answer.** Re-running the **same base command** with different flags, filters, or arguments — `sensors`, then `sensors <filter>`, then `sensors <flag>` — is guessing *even when every call succeeds*. If a command keeps returning a list (or anything other than the value you asked for), that's a dead end, not progress: after the **second** call to the same base command, STOP and find the *right* command (re-search the catalog or run `help <module>`).
 
 ### Argument conventions
 
@@ -82,6 +91,8 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 3. `close<sensor>` — e.g. `closethermal`
 
 ### 5. ESP-NOW mesh — talking to peers
+
+To just **run a command on a mesh device, target it by name** (see *Mesh devices* above) — the gateway relays it for you. The commands here are the underlying ESP-NOW mechanics, for mesh-specific operations: health, topology, identity/metadata, file transfer, and room/tag broadcasts.
 
 - **Mesh health & peers:** `espnowmeshstatus` (heartbeats/ACKs), `espnowlist` (paired peers), `espnowdevices` (all mesh devices, master). Full topology is `espnowmeshtopo` (async — see below).
 - **Encrypted peers.** A secure mesh pairs with `espnowpairsecure <mac> <name>` under a shared `espnowsetpassphrase`; that runs an async key exchange — confirm it with `espnowencstatus` / `espnowsessions`. Plain `espnowpair` is unencrypted. **Bonding (below) requires a secure session.**
@@ -115,7 +126,7 @@ When unsure about a bond, read **`bondstatus`** — it's the single source of tr
 - **Read a sensor:** `openthermal` → `thermalread` → `closethermal`.
 - **Change & save a setting:** `ledbrightness 80`, then `savesettings`.
 - **Daily automation:** `automationadd name=morning type=atTime time=07:00 command=status` (time is device-local; set `tzoffsetminutes` first if needed).
-- **Battery / power:** `battery status` (voltage + charge %); `power` for power mode. (`battery` alone is a module name, not a command — the command is `battery status`.)
+- **Battery / power:** `batterystatus` (one word — voltage + charge %); `power` for power mode. (`battery` is the help *module*; the command is `batterystatus`, **not** `battery status`. Needs the battery feature `[ON]`.)
 
 ## Error recovery
 
