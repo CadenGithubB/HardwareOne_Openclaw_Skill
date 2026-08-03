@@ -190,6 +190,40 @@ do_get() {
     esac
 }
 
+# --- Binary GET as base64 (images and other binary artifacts) ---
+# Prints base64 (single line, unwrapped) to stdout and "HTTP <code> <content-type>" to
+# stderr. NEVER printf's the body — that corrupts binary (NUL strip + trailing newline).
+# Re-authenticates once on 401. Exit 0 only on HTTP 200.
+do_get_b64() {
+    local path="$1"
+    local body_file out code ctype rc
+    body_file=$(mktemp)
+    out=""; rc=0
+    out=$(hw_curl "$REQ_TIMEOUT" -o "$body_file" -w '%{http_code} %{content_type}' \
+        -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$URL$path") || rc=$?
+    if [[ "$rc" -ne 0 ]]; then rm -f "$body_file"; report_curl_failure "$rc"; return 1; fi
+    code="${out%% *}"; ctype="${out#* }"
+    if [[ "$code" == "401" ]]; then
+        echo "Session expired, re-authenticating..." >&2
+        if do_login; then
+            out=""; rc=0
+            out=$(hw_curl "$REQ_TIMEOUT" -o "$body_file" -w '%{http_code} %{content_type}' \
+                -b "$COOKIE_FILE" "$URL$path") || rc=$?
+            if [[ "$rc" -ne 0 ]]; then rm -f "$body_file"; report_curl_failure "$rc"; return 1; fi
+            code="${out%% *}"; ctype="${out#* }"
+        else
+            rm -f "$body_file"; return 1
+        fi
+    fi
+    if [[ "$code" == "200" ]]; then
+        echo "HTTP 200 ${ctype:-application/octet-stream}" >&2
+        base64 < "$body_file" | tr -d '\n'
+        rm -f "$body_file"; return 0
+    fi
+    echo "HTTP $code ${ctype}" >&2
+    rm -f "$body_file"; return 1
+}
+
 # --- CLI command execution ---
 do_cli() {
     local cmd="$1"
@@ -197,6 +231,7 @@ do_cli() {
     local mt="$REQ_TIMEOUT"
     case "$first" in
         llmgenerate|llmload) mt="$LONG_TIMEOUT" ;;  # model ops can run for minutes
+        opencamera|camerastart) mt="$LONG_TIMEOUT" ;;  # camera power-up can block while the sensor warms up
     esac
 
     local attempt=0 max_attempts=2
@@ -250,6 +285,12 @@ case "${1:-}" in
         fi
         [[ -f "$COOKIE_FILE" ]] || do_login || exit 1
         do_get "$2"; exit $? ;;
+    --get-b64)
+        if [[ -z "${2:-}" ]]; then
+            echo "Error: --get-b64 requires a path (e.g. --get-b64 /api/sensors/camera/frame)" >&2; exit 1
+        fi
+        [[ -f "$COOKIE_FILE" ]] || do_login || exit 1
+        do_get_b64 "$2"; exit $? ;;
 esac
 
 [[ -f "$COOKIE_FILE" ]] || do_login || exit 1

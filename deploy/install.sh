@@ -7,6 +7,27 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE="$HOME/.openclaw/workspace/skills/hardwareone"
+STAGE=""
+
+# Support both distributions:
+#   deploy bundle: deploy/{install.sh,skill/,plugin/}
+#   repository:    {SKILL.md,references/,scripts/,plugin/,deploy/install.sh}
+if [[ -f "$HERE/skill/SKILL.md" && -f "$HERE/plugin/deploy.sh" ]]; then
+  SKILL_SOURCE="$HERE/skill"
+  PLUGIN_SOURCE="$HERE/plugin"
+elif [[ -f "$HERE/../SKILL.md" && -f "$HERE/../plugin/deploy.sh" ]]; then
+  REPO_ROOT="$(cd "$HERE/.." && pwd)"
+  STAGE="$(mktemp -d)"
+  trap '[[ -n "$STAGE" && -d "$STAGE" ]] && rm -rf "$STAGE"' EXIT
+  cp "$REPO_ROOT/SKILL.md" "$STAGE/"
+  cp -R "$REPO_ROOT/references" "$REPO_ROOT/scripts" "$STAGE/"
+  SKILL_SOURCE="$STAGE"
+  PLUGIN_SOURCE="$REPO_ROOT/plugin"
+else
+  echo "Error: could not find the HardwareOne skill and plugin files." >&2
+  echo "       Run deploy/install.sh from a repository checkout, or use a complete deploy bundle." >&2
+  exit 1
+fi
 
 if [[ ! -f "$HOME/.openclaw/openclaw.json" ]]; then
   echo "Error: ~/.openclaw/openclaw.json not found." >&2
@@ -16,7 +37,7 @@ fi
 
 echo "== 1. skill -> workspace (clean: --delete prunes removed files; .env is protected) =="
 mkdir -p "$WORKSPACE"
-rsync -a --delete --exclude='.env' "$HERE/skill/" "$WORKSPACE/"
+rsync -a --delete --exclude='.env' "$SKILL_SOURCE/" "$WORKSPACE/"
 echo "   updated $WORKSPACE"
 
 echo "== 1b. keep credentials OUT of the skill dir (host-only) =="
@@ -35,18 +56,18 @@ echo "== 2. sync sandbox mirror(s) so the agent sees the update =="
 shopt -s nullglob
 found=0
 for d in "$HOME"/.openclaw/sandboxes/*/skills/hardwareone; do
-  rsync -a --delete --exclude='.env' "$HERE/skill/" "$d/"
+  rsync -a --delete --exclude='.env' "$SKILL_SOURCE/" "$d/"
   rm -f "$d/.env"
   echo "   updated $d"
   found=1
 done
 [[ "$found" = 1 ]] || echo "   (no existing sandbox mirror found; the gateway may create it on restart)"
 
-echo "== 3. plugin -> dist/extensions + wiring + restart =="
-bash "$HERE/plugin/deploy.sh"
+echo "== 3. managed plugin install + wiring + restart =="
+bash "$PLUGIN_SOURCE/deploy.sh"
 
 echo
 echo "== done. verify: =="
 echo "   openclaw plugins list | grep -A1 hardwareone                              # expect: loaded"
 echo "   find ~/.openclaw/sandboxes/*/skills/hardwareone -name .env || echo clean    # expect: clean"
-echo "   then a fresh agent session: \"List every tool whose name starts with hardwareone.\"  # expect: ping, cli, devices (NO hardwareone_get)"
+echo "   then a fresh agent session: \"List every tool whose name starts with hardwareone.\"  # expect: ping, cli, devices, camera (NO hardwareone_get)"

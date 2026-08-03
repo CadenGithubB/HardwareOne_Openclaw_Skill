@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Host-side wrapper the tools shell out to. Defaults to the standard skill location
 // under the gateway user's home; set HW1_SCRIPT to override if your skill lives elsewhere.
@@ -18,6 +20,8 @@ const MAX_OUTPUT_BYTES = 64 * 1024;
 const RELAY_TIMEOUT_MS = 15_000;      // how long to poll for a mesh peer's async reply
 const RELAY_POLL_INTERVAL_MS = 800;   // gap between espnowmessages polls
 const MSG_CMD_RESULT = 6;             // espnowmessages `type` value for a remote-command result
+const IMAGE_MAX_B64_BYTES = 8 * 1024 * 1024; // base64 of a device image (frames are small; cap generously)
+const CAMERA_WARMUP_MS = 90_000;      // `opencamera` can block while the sensor powers up (~60s max)
 
 const SAFE_CLI_RE = /^[\x20-\x7E]+$/;
 const SAFE_DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -182,7 +186,9 @@ function cookieDirFor(name) {
   return `/tmp/hw1/${String(name).replace(/[^A-Za-z0-9_-]/g, "_")}`;
 }
 
-function runHw1(device, argv) {
+function runHw1(device, argv, opts = {}) {
+  const timeoutMs = opts.timeoutMs || TIMEOUT_MS;
+  const maxBytes = opts.maxBytes || MAX_OUTPUT_BYTES;
   const env = {
     ...process.env,
     HW1_URL: device.url,
@@ -205,11 +211,11 @@ function runHw1(device, argv) {
     let truncated = false;
     const timer = setTimeout(() => {
       try { proc.kill("SIGKILL"); } catch {}
-      rejectPromise(new Error(`hardwareone timeout after ${TIMEOUT_MS}ms`));
-    }, TIMEOUT_MS);
+      rejectPromise(new Error(`hardwareone timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
     proc.stdout.on("data", (chunk) => {
-      if (stdout.length + chunk.length > MAX_OUTPUT_BYTES) {
-        stdout += chunk.slice(0, MAX_OUTPUT_BYTES - stdout.length).toString();
+      if (stdout.length + chunk.length > maxBytes) {
+        stdout += chunk.slice(0, maxBytes - stdout.length).toString();
         truncated = true;
         proc.stdout.removeAllListeners("data");
       } else {
@@ -404,7 +410,114 @@ const DEVICE_PARAM = {
   description: "Optional device name (from hardwareone_devices). Omit to use the default device; when hardwareone_devices lists more than one direct device they are co-equal targets, so name the one you mean rather than relying on the default for an ambiguous request. A device shown with access:mesh is relayed through the master automatically — address it by name exactly like a direct device; the relay is async, so it can take a few seconds and reports cleanly if the peer is offline.",
 };
 
-export function createHardwareoneTools() {
+// ── image / camera (binary fetch → image content block) ──────────────────────
+// hw1.sh `--get-b64 <path>` performs an authenticated binary GET and prints base64 to
+// stdout (one line, unwrapped) plus an `HTTP <code> <content-type>` line to stderr. Only
+// DIRECT HTTP(S) devices can serve binary — a mesh peer has no HTTP, so image tools reject
+// it. The 64KB text cap is raised for this path (a JPEG frame's base64 can exceed it).
+async function runHw1Image(device, path) {
+  let res;
+  try { res = await runHw1(device, ["--get-b64", path], { maxBytes: IMAGE_MAX_B64_BYTES }); }
+  catch (err) { return { error: String(err && err.message ? err.message : err) }; }
+  const line = ((res.stderr || "").match(/HTTP\s+(\d{3})\s*(\S*)/g) || []).pop();
+  const mm = line ? line.match(/HTTP\s+(\d{3})\s*(\S*)/) : null;
+  const code = mm ? Number(mm[1]) : (res.exitCode === 0 ? 200 : 0);
+  const contentType = mm && mm[2] ? mm[2] : "";
+  return { code, contentType, b64: (res.stdout || "").trim(), exitCode: res.exitCode, stderr: res.stderr, truncated: res.truncated };
+}
+
+// Resolve the target for an HTTP-only (binary) feature: a DIRECT device only — never mesh.
+function resolveDirectDevice(registry, requestedDevice) {
+  if (requestedDevice) {
+    const d = registry.devices[requestedDevice];
+    if (!d) return { error: `unknown device '${requestedDevice}'. Configured: ${Object.keys(registry.devices).join(", ")}` };
+    if (d.via !== "direct") return { error: `'${requestedDevice}' is a ${d.via} device — the camera is only available on devices reachable directly over HTTP/S (a mesh peer has no HTTP to serve an image).` };
+    return { device: d };
+  }
+  if (!registry.default) return { error: `no default device — ${registry.warnings.join("; ") || "name a direct device"}` };
+  const d = registry.devices[registry.default];
+  if (!d || d.via !== "direct") return { error: "the default device is not reachable directly over HTTP/S; name a direct device." };
+  return { device: d };
+}
+
+function descriptionText(result) {
+  if (typeof result === "string") return result.trim();
+  if (result && typeof result.text === "string") return result.text.trim();
+  return "";
+}
+
+async function describeCameraImage(img, device, api) {
+  const mediaUnderstanding = api && api.runtime && api.runtime.mediaUnderstanding;
+  if (!mediaUnderstanding || typeof mediaUnderstanding.describeImageFile !== "function") {
+    return { error: "this OpenClaw runtime does not expose mediaUnderstanding.describeImageFile" };
+  }
+
+  const mediaType = img.contentType && img.contentType.startsWith("image/") ? img.contentType : "image/jpeg";
+  const extension = mediaType === "image/png" ? ".png" : mediaType === "image/webp" ? ".webp" : ".jpg";
+  const scratch = await fs.mkdtemp(join(tmpdir(), "hardwareone-camera-"));
+  const filePath = join(scratch, `camera-${device.name}${extension}`);
+
+  try {
+    await fs.writeFile(filePath, Buffer.from(img.b64, "base64"), { mode: 0o600 });
+    const cfg = api.config;
+    let agentDir;
+    try {
+      const identity = api.runtime.agent && api.runtime.agent.resolveAgentIdentity
+        ? api.runtime.agent.resolveAgentIdentity(cfg)
+        : null;
+      const agentId = identity && (identity.agentId || identity.id) ? (identity.agentId || identity.id) : "main";
+      if (api.runtime.agent && typeof api.runtime.agent.resolveAgentDir === "function") {
+        agentDir = api.runtime.agent.resolveAgentDir(cfg, agentId);
+      }
+    } catch { /* describeImageFile can still resolve the configured image model without an explicit agentDir */ }
+
+    const request = { filePath, cfg };
+    if (agentDir) request.agentDir = agentDir;
+    const result = await mediaUnderstanding.describeImageFile(request);
+    const text = descriptionText(result);
+    if (!text) return { error: "the configured OpenClaw image model returned no description" };
+    return {
+      text,
+      provider: result && result.provider ? result.provider : undefined,
+      model: result && result.model ? result.model : undefined,
+    };
+  } catch (err) {
+    return { error: String(err && err.message ? err.message : err) };
+  } finally {
+    await fs.rm(scratch, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function imageResult(img, device, analysis) {
+  const mediaType = img.contentType && img.contentType.startsWith("image/") ? img.contentType : "image/jpeg";
+  const kb = Math.round((img.b64.length * 3 / 4) / 1024);
+  const analysisText = analysis && analysis.text
+    ? `\n\nAutomatic visual description of this exact captured frame:\n${analysis.text}\n\nUse that description to answer the user's camera question. The image block is also attached for clients that can display or forward tool-result images.`
+    : analysis && analysis.error
+      ? `\n\nAutomatic visual description failed: ${analysis.error}. The capture itself succeeded and the image block is attached, but do not invent scene details or try image/exec/file paths; report the description failure.`
+      : "\n\nThe image block is attached. Do not invent a filesystem path for it.";
+  return {
+    content: [
+      { type: "text", text: `Camera image from '${device.name}' (${mediaType}, ~${kb} KB).${analysisText}` },
+      // AgentToolResult uses OpenClaw's canonical image block, not the Anthropic
+      // Messages API's nested `source` shape. The UI may render either shape, but
+      // OpenClaw's model-facing image sanitizer requires top-level data + mimeType.
+      { type: "image", data: img.b64, mimeType: mediaType },
+    ],
+    details: {
+      device: device.name,
+      mediaType,
+      approxKB: kb,
+      kind: "camera",
+      description: analysis && analysis.text ? analysis.text : undefined,
+      descriptionProvider: analysis && analysis.provider ? analysis.provider : undefined,
+      descriptionModel: analysis && analysis.model ? analysis.model : undefined,
+      descriptionError: analysis && analysis.error ? analysis.error : undefined,
+    },
+  };
+}
+
+export function createHardwareoneTools(api) {
   return [
     {
       name: "hardwareone_ping",
@@ -496,6 +609,55 @@ export function createHardwareoneTools() {
         if (registry.warnings.length) payload.warnings = registry.warnings;
         if (registry.notes && registry.notes.length) payload.notes = registry.notes;
         return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], details: payload };
+      },
+    },
+    {
+      name: "hardwareone_camera",
+      label: "HardwareOne Camera",
+      description:
+        "Take a photo with a HardwareOne device's camera, describe that exact frame with OpenClaw's configured " +
+        "image model, and also return the captured image for display. " +
+        "Only works on devices reachable directly over HTTP/S (access:direct) — NOT mesh peers. By default it " +
+        "starts the camera automatically if it is off (a few seconds to warm up). Use this whenever the user " +
+        "asks what the device sees — to read a label, check a scene, count objects, inspect something. Use the " +
+        "automatic visual description in the tool result; never call the separate image tool, invent a file path, " +
+        "or fall back to CLI capture/fileview/base64/exec.",
+      parameters: {
+        type: "object",
+        properties: {
+          device: DEVICE_PARAM,
+          ensureOn: { type: "boolean", description: "Start the camera automatically if it is off (default true)." },
+          describe: { type: "boolean", description: "Describe the captured frame with OpenClaw's configured image model (default true). Set false only when the raw image is all you need." },
+        },
+        required: [],
+      },
+      async execute(_toolCallId, params) {
+        const requested = params && params.device;
+        const ensureOn = !params || params.ensureOn === undefined ? true : truthy(params.ensureOn);
+        const describe = !params || params.describe === undefined ? true : truthy(params.describe);
+        if (!validDeviceParam(requested)) return errorResult("device must be a short name (letters, digits, _ or -)");
+        const registry = await buildRegistry();
+        if (Object.keys(registry.devices).length === 0) return errorResult("no HardwareOne devices configured");
+        const resolved = resolveDirectDevice(registry, requested);
+        if (resolved.error) return errorResult(resolved.error);
+        const device = resolved.device;
+
+        let img = await runHw1Image(device, "/api/sensors/camera/frame");
+        if (img.error) return errorResult(img.error);
+        if (img.code === 501) return errorResult(`'${device.name}' has no camera (its firmware wasn't built with the camera feature).`);
+        if (img.code === 503 && ensureOn) {
+          // camera is off — start it (opencamera can block while the sensor powers up), then retry once.
+          try { await runHw1(device, ["opencamera"], { timeoutMs: CAMERA_WARMUP_MS }); }
+          catch (err) { return errorResult(`could not start the camera on '${device.name}': ${String(err && err.message ? err.message : err)}`); }
+          img = await runHw1Image(device, "/api/sensors/camera/frame");
+          if (img.error) return errorResult(img.error);
+        }
+        if (img.code === 503) return errorResult(`the camera on '${device.name}' is not started — retry with ensureOn:true, or run 'opencamera' via hardwareone_cli first.`);
+        if (img.code !== 200) return errorResult(`camera fetch failed on '${device.name}' (HTTP ${img.code || "?"}${img.stderr ? ": " + img.stderr.trim().slice(0, 200) : ""}).`);
+        if (!img.b64) return errorResult(`the camera on '${device.name}' returned an empty image.`);
+        if (img.truncated) return errorResult(`the camera image from '${device.name}' exceeded the size cap — lower the resolution with 'camerares' via hardwareone_cli and retry.`);
+        const analysis = describe ? await describeCameraImage(img, device, api) : null;
+        return imageResult(img, device, analysis);
       },
     },
   ];

@@ -23,6 +23,7 @@ An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C 
 | `hardwareone_ping` | `{ "device"?: "<name>" }` | Health-check a device (the default device, or the named one). Returns hostname, MAC, firmware version. |
 | `hardwareone_cli`  | `{ "command": "<cmd>", "device"?: "<name>" }` | Run a device CLI command — e.g. `{"command": "thermalread"}`. This is how you do everything. |
 | `hardwareone_devices` | `{ "probe"?: true }` | List configured devices (names + roles). `probe` also reports which are online. |
+| `hardwareone_camera` | `{ "device"?: "<name>", "ensureOn"?: true, "describe"?: true }` | **Take a photo** with a `direct` device's camera, describe that exact frame with OpenClaw's configured image model, and also return the image for display. Direct HTTP/S devices only — not mesh peers. |
 
 **Do not** attempt `curl`, `wget`, `python`, `node`, `/dev/tcp`, or to execute `hw1.sh` yourself — you have no network and all of those fail. Do not read or edit `scripts/`; those files run host-side and are not used by you.
 
@@ -39,6 +40,12 @@ There may be one or more HardwareOne devices. Use `hardwareone_devices` to see t
 - **Capabilities differ per device.** Run `features` on each device you use — don't assume one device's catalog applies to another (different sensors, different firmware). `hardwareone_devices` may also carry an operator-written **`description`** of a device's hardware/software setup (which build, which sensors are attached, quirks) — read it before choosing a device or command. It complements `features`; it doesn't replace running `features` on an unfamiliar device.
 - **What each device *is* lives in your memory, not here.** At session start, find your topology note with `note_search hardwareone` (locations, roles, sensors, which peers are mesh-only); read it, and update it — durable facts only, no IPs or live status — when devices change.
 - **Mesh devices** show up in `hardwareone_devices` with `access: "mesh"`. Address them **by name, exactly like a direct device** — `hardwareone_cli` with `device: "<name>"` — and the gateway relays the command through the master for you (it injects the peer's credentials host-side, runs `espnowremote`, and waits for the reply). The relay is **async**, so it may take a few seconds and reports cleanly if the peer is offline. You do **not** run `espnowremote` yourself for ordinary commands. The `espnow*` commands stay available for genuinely mesh-specific tasks — topology (`espnowmeshtopo`), peer metadata (`espnowrequestmeta`), file transfer (`espnowfetch`/`espnowsendfile`).
+
+## Seeing the camera (direct devices only)
+
+`hardwareone_camera` captures a photo, runs OpenClaw's configured image model against that exact frame, and returns both the textual visual description and the image block. Use it whenever the user asks what a device sees (read a sign, check a door, count people, inspect a scene). Pass `device` to choose one (omit for the default). It **only works on `direct` HTTP/S devices**, not `access:mesh` peers. It starts the camera automatically if needed (`ensureOn`, default true). Leave `describe` at its default `true` when answering a visual question; set it false only when the user wants the raw capture without analysis.
+
+Answer from the tool's **automatic visual description**. Do not call the separate `image` tool, invent or search for a camera file path, or retry through `cameracapture`, SD-card files, `fileview`, base64, `exec`, or another CLI command. The Control UI can render an image content block even when the active model transport cannot consume that same tool-result image; the built-in description avoids depending on that unreliable handoff. If automatic description fails, report that exact failure without guessing what the scene contains.
 
 ## Workflow
 

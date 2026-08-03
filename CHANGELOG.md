@@ -3,6 +3,37 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-08-02
+
+### Added
+- **`hardwareone_camera` — the agent can see.** A new gateway tool takes a photo with a
+  device's camera and returns it to the (multimodal) agent as an image content block, so it
+  can actually look at and describe what the device sees. It is a purpose-built "take a
+  picture" verb — the gateway performs the fixed host-side `GET /api/sensors/camera/frame`;
+  the agent never constructs a path (unlike the removed `hardwareone_get`). It works **only
+  on `direct` HTTP/S devices** — a `via:"mesh"` peer has no HTTP to serve binary and is
+  rejected cleanly. By default it starts the camera if it's off (`ensureOn`) and warms up
+  within a longer timeout. Backed by a new binary-safe `hw1.sh --get-b64 <path>` fetch mode
+  (the existing text `--get` path corrupts binary), reusable by future image/audio tools.
+
+### Note
+- Requires the OpenClaw runtime to pass image tool-results through to a **multimodal** model;
+  verify this on the host before relying on it (older text-only model setups will ignore the
+  image and see only the accompanying text line).
+
+### Changed
+- `hardwareone_camera` now describes the captured frame inside the gateway with OpenClaw's
+  configured image model and returns that description as ordinary tool text alongside the
+  image block. This avoids the OpenClaw path where the Control UI renders a tool-result image
+  but the next model turn cannot consume it and invents a nonexistent sandbox filename.
+- Install the gateway plugin through OpenClaw's managed local-plugin workflow and import
+  `definePluginEntry` from the public plugin SDK. This replaces the fragile global
+  `dist/extensions` copy and per-release hashed import that could leave an obsolete plugin
+  active after an OpenClaw core upgrade.
+- Return camera frames using OpenClaw's canonical top-level image fields (`data` and
+  `mimeType`). The previous nested Anthropic `source` shape could render in the Control UI
+  while being discarded as malformed before reaching the vision model.
+
 ## [1.5.0] — 2026-07-14
 
 ### Added

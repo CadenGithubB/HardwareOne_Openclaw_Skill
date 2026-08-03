@@ -1,6 +1,6 @@
 # HardwareOne — OpenClaw integration
 
-**Version 1.5.0**
+**Version 1.6.0**
 
 Lets an [OpenClaw](https://github.com/openclaw/openclaw) agent monitor and control a
 [HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 device.
@@ -12,8 +12,8 @@ directly. Instead this ships in two cooperating halves:
 Agent (sandbox, no network) ──tool call──▶ Gateway plugin (host) ──spawn──▶ hw1.sh ──HTTP(S)──▶ ESP32
 ```
 
-- **Plugin** (`plugin/`) — registers three tools on the OpenClaw gateway:
-  `hardwareone_ping`, `hardwareone_cli`, `hardwareone_devices`. The CLI is the device's
+- **Plugin** (`plugin/`) — registers four tools on the OpenClaw gateway:
+  `hardwareone_ping`, `hardwareone_cli`, `hardwareone_devices`, `hardwareone_camera`. The CLI is the device's
   complete interface — there is no HTTP-API tool.
 - **Skill** (`SKILL.md`, `references/`) — tells the agent how to use those tools and
   which commands exist.
@@ -51,8 +51,11 @@ gateway tools:
 | `references/settings.generated.md` | Every configurable setting (generated from firmware). |
 | `scripts/hw1.sh` | Host-side HTTP wrapper the plugin calls. |
 | `tools/sync_command_reference.py` | Regenerates the catalogs from firmware (`--audit`, `--check`). |
-| `plugin/` | The gateway plugin (the three tools) + `deploy.sh`. |
+| `plugin/` | The gateway plugin (the four tools) + `deploy.sh`. |
+| `deploy/` | Repository/bundle installer and host deployment instructions. |
+| `docs/openclaw-patches/` | Carefully gated OpenClaw core workarounds, kept separate from the HardwareOne integration. |
 | `.env.template` | Device URL + credentials template (host-side; never enters the sandbox). |
+| `hardwareone.devices.json.template` | Multi-device registry template (host-side; may contain credentials after copying, so the live file is ignored). |
 
 ## Deploy (on the OpenClaw host)
 
@@ -82,10 +85,10 @@ gateway tools:
    ```bash
    bash plugin/deploy.sh
    ```
-   It copies the plugin into OpenClaw's `dist/extensions/`, re-points the per-release
-   `plugin-entry-<hash>` import, ensures the tool allowlists in `openclaw.json`,
-   flushes the jiti cache, and restarts the gateway. **Re-run it after every
-   `npm update openclaw`** — that wipes the plugin out of `dist/extensions/`.
+   It installs the plugin through OpenClaw's managed local-plugin workflow, ensures the
+   tool allowlists in `openclaw.json`, and restarts the gateway. The plugin lives outside
+   the global npm package, so OpenClaw core upgrades no longer wipe it out. Re-run the
+   deploy script whenever this plugin itself changes.
 4. **Verify**:
    ```bash
    openclaw plugins list | grep hardwareone     # the plugin should be enabled
@@ -116,7 +119,7 @@ Credentials live only on the host and are never mounted into the sandbox.
 
 ## Security model
 
-- The agent's sandbox has **no network** (`NetworkMode: none`); the three gateway tools
+- The agent's sandbox has **no network** (`NetworkMode: none`); the gateway tools
   are the only path to the device — the same pattern OpenClaw uses for web search.
 - Tool inputs are length-capped and validated — control characters rejected, device names restricted to a safe charset.
 - The plugin `spawn`s the wrapper with an argv array — **never a shell** — so command

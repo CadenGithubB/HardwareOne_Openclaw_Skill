@@ -1,11 +1,16 @@
 {
   "id": "hardwareone",
-  "enabledByDefault": true,
+  "name": "HardwareOne",
+  "description": "HardwareOne ESP32 tools exposed to the sandboxed agent",
+  "activation": {
+    "onStartup": true
+  },
   "contracts": {
     "tools": [
       "hardwareone_ping",
       "hardwareone_cli",
-      "hardwareone_devices"
+      "hardwareone_devices",
+      "hardwareone_camera"
     ]
   },
   "configSchema": {

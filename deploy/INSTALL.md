@@ -1,14 +1,15 @@
 # HardwareOne — deploy bundle
 
-Drag this whole folder onto the OpenClaw host, then run
-`./install.sh` from inside it as the `openclaw` user. That's it.
+Run `deploy/install.sh` from a repository checkout, or drag a complete deploy bundle
+onto the OpenClaw host and run `./install.sh` inside it as the `openclaw` user.
+The installer detects either layout automatically.
 
 It updates two things in two places:
 
 | Part | Where it goes | Notes |
 |------|---------------|-------|
 | `skill/`  | `~/.openclaw/workspace/skills/hardwareone/` | persistent; survives OpenClaw updates |
-| `plugin/` | OpenClaw's `dist/extensions/hardwareone/` (via `plugin/deploy.sh`) | wiped on every `npm update openclaw` — re-run after each upgrade |
+| `plugin/` | OpenClaw's managed extensions directory (via `plugin/deploy.sh`) | tracked separately from the global OpenClaw package |
 
 Your existing `.env` (device URL + credentials) is **never touched** — there is no
 `.env` in this bundle, and the installer excludes it from the sync, so the `--delete`
@@ -16,13 +17,17 @@ clean-up won't remove it either.
 
 ## Easiest: one command
 
-On the host, from inside this folder:
+From the repository root:
+
+    ./deploy/install.sh
+
+Or, from inside a complete deploy bundle:
 
     ./install.sh
 
 It copies the skill into the workspace (and any sandbox mirror) without touching
-your `.env`, then runs `plugin/deploy.sh` to restore + wire the plugin, fix the
-per-release `plugin-entry-<hash>` import, flush the jiti cache, and restart the gateway.
+your `.env`, then runs `plugin/deploy.sh` to install/update and wire the managed plugin
+and restart the gateway.
 
 ## Or by hand
 
@@ -33,7 +38,7 @@ per-release `plugin-entry-<hash>` import, flush the jiti cache, and restart the 
     for d in ~/.openclaw/sandboxes/*/skills/hardwareone; do
       rsync -a --delete --exclude='.env' skill/ "$d"/; done
 
-    # 3. plugin -> dist/extensions + wiring + restart
+    # 3. managed plugin install + wiring + restart
     bash plugin/deploy.sh
 
 ## Verify
@@ -45,14 +50,17 @@ per-release `plugin-entry-<hash>` import, flush the jiti cache, and restart the 
 
 ## Heads-up
 
-The plugin was built against OpenClaw 2026.4.15; the host is on 2026.6.9.
-`deploy.sh` handles the two known upgrade-breakers (the file wipe and the hash
-re-point), but if `plugins list` doesn't show `loaded`, the likely cause is a
-plugin-API change between those releases — check the gateway log above and
-`dist/docs/plugins/building-extensions.md`, and send me what you find.
+The plugin targets OpenClaw 2026.7.1 or newer and imports the public plugin SDK.
+If runtime inspection does not show all HardwareOne tools, check the gateway log
+and `openclaw plugins inspect hardwareone --runtime --json`.
 
 ## What's new in this drop
 
+- **Camera understanding:** `hardwareone_camera` now sends the captured frame through
+  OpenClaw's configured image-understanding runtime while the file is still available on
+  the gateway. Its result contains both a textual description the agent can reliably read
+  and the original image block the Control UI can display. The agent no longer needs to
+  call `image`, guess a sandbox path, or use `exec` after taking a photo.
 - **CLI-only:** the `hardwareone_get` HTTP-API tool is removed — the agent now does
   everything through `hardwareone_cli`. Installing this drop unregisters the old tool
   (clean plugin install + the `openclaw.json` allowlist is pruned).

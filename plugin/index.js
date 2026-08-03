@@ -1,5 +1,5 @@
 process.stderr.write("[hardwareone] index.js importing\n");
-import { t as definePluginEntry } from "../../plugin-entry-Bkat4og3.js";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createHardwareoneTools } from "./hardwareone-tool.js";
 
 const hardwareone_default = definePluginEntry({
@@ -8,7 +8,7 @@ const hardwareone_default = definePluginEntry({
   description: "HardwareOne ESP32 tools exposed to the sandboxed agent",
   register(api) {
     process.stderr.write("[hardwareone] register() called\n");
-    for (const tool of createHardwareoneTools()) {
+    for (const tool of createHardwareoneTools(api)) {
       api.registerTool(tool);
       process.stderr.write("[hardwareone] registered tool " + tool.name + "\n");
     }
