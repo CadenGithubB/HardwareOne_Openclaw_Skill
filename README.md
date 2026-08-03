@@ -1,6 +1,6 @@
 # HardwareOne — OpenClaw integration
 
-**Version 1.6.0**
+**Version 1.7.0**
 
 Lets an [OpenClaw](https://github.com/openclaw/openclaw) agent monitor and control a
 [HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 device.
@@ -25,28 +25,23 @@ The command and settings references are **generated from the firmware** by
 
 ## What it looks like
 
-A locally-run OpenClaw agent creating a scheduled automation on the device — from a
-plain-English request to a live, enabled automation on the ESP32, entirely through the
-gateway tools:
+A user can ask, “Create a daily device-status automation for 7 AM.” The agent then:
 
-**1. The request**
+1. Reads the firmware-synced catalog and the target device's live feature state.
+2. Runs the exact current `automation add ...` form through `hardwareone_cli`.
+3. Confirms the stored schedule with `automation list` instead of assuming that an
+   accepted command completed correctly.
 
-![Asking the agent to create a daily automation called dailyrunner](assets/demo-1-request.png)
-
-**2. The agent finds the right command in the skill's catalog and runs it**
-
-![The agent runs automationadd with the atTime type and creates the automation](assets/demo-2-create.png)
-
-**3. …created, enabled, and scheduled on the device**
-
-![The automation is created, enabled, and scheduled to run status daily at 7 AM](assets/demo-3-result.png)
+The same pattern applies to sensor readings, settings, mesh peers, health capture, and
+wearable controls: discover the registered command, execute it through the gateway, and
+verify the subsystem-specific result.
 
 ## Layout
 
 | Path | What |
 |------|------|
 | `SKILL.md` | The agent-facing skill (tool usage, workflow, error recovery). |
-| `references/api-reference.md` | Curated guide: the feature `[ON]/[OFF]/[N/C]` model, error handling, common commands. |
+| `references/api-reference.md` | Curated operating guide: dispatch, roles, state layers, async results, and current subsystem workflows. |
 | `references/cli-commands.generated.md` | Exhaustive command catalog (generated from firmware). |
 | `references/settings.generated.md` | Every configurable setting (generated from firmware). |
 | `scripts/hw1.sh` | Host-side HTTP wrapper the plugin calls. |
@@ -75,7 +70,7 @@ gateway tools:
    ```
    Edit it so each line has your device's value:
    ```
-   HW1_URL=192.168.1.50          # bare IP auto-detects http/https (or use a full URL to pin it)
+   HW1_URL=192.0.2.50            # documentation IP; replace with the device's address
    HW1_USER=admin                # device login username
    HW1_PASS=your-password        # device login password
    ```
@@ -101,16 +96,19 @@ gateway tools:
 python3 tools/sync_command_reference.py            # regenerate the catalogs
 python3 tools/sync_command_reference.py --audit    # report metadata gaps
 python3 tools/sync_command_reference.py --check    # CI: exit 1 if the catalogs are stale
+python3 ../hardwareone-idf/tools/command_registry.py audit  # firmware registry drift
 ```
 
 Point it at your firmware checkout with `--firmware <path>` or `$HW1_FIRMWARE`
-(default `../hardwareone-idf`). See [tools/README.md](tools/README.md).
+(default `../hardwareone-idf`). The generated header records the clean firmware
+revision, or a content-hashed `+dirty` source snapshot when scanned source files are
+uncommitted. See [tools/README.md](tools/README.md).
 
 ## Configuration (`.env`)
 
 | Var | Meaning |
 |-----|---------|
-| `HW1_URL` | Device address. A bare IP/host (`192.168.1.42`) auto-detects http vs https; a full URL pins the scheme. |
+| `HW1_URL` | Device address. A bare IP/host (`192.0.2.42` in examples) auto-detects http vs https; a full URL pins the scheme. |
 | `HW1_USER` / `HW1_PASS` | Device credentials. |
 | `HW1_INSECURE=1` or `HW1_CACERT=<path>` | Accept / pin a self-signed HTTPS cert (optional). |
 | `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). |

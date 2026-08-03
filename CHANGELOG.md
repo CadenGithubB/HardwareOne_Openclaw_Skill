@@ -3,6 +3,44 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-08-03
+
+### Added
+- Firmware 0.99.7 command coverage: events and notification policy, separate subsystem
+  enable/autostart controls, crash/boot diagnostics, RAM-flush recovery, consent-based
+  ESP-NOW pairing, capture encryption and R1 health tracking, expanded G2/R1 commands,
+  and guided/domain-aware LLM controls.
+- Super-admin command metadata in the generated catalog and agent error-recovery rules
+  for the current `guest` / `user` / `admin` / `superadmin` role model.
+- Reproducible dirty-source provenance: catalogs generated from uncommitted firmware
+  source carry a content hash, while unrelated untracked notes do not mark them dirty.
+
+### Changed
+- Regenerated the exhaustive references from HardwareOne v0.99.7 (`ee87ea7`): 899
+  unique command names, 903 registry entries across 44 modules, and 285 persisted
+  settings (278 linked to registered commands/dispatcher forms).
+- Command guidance now matches case-insensitive longest-prefix dispatch, including
+  valid forms such as `automation list`, `power mode`, and `sensorlog interval`.
+- Settings guidance now reflects immediate persistence and the explicit
+  `beginwrite` → edits → `savesettings` batching workflow.
+- Replaced the duplicated hand-maintained command list with a focused operating guide
+  for permissions, compile/enable/autostart/live state, structured results, async
+  retrieval, health capture, wearables, mesh/bonding, and camera use.
+- Extended the host wrapper's slow-command timeout to `certgen`; RSA-2048 certificate
+  generation is documented by firmware as taking roughly 30–60 seconds.
+- Replaced private-LAN example addresses with RFC-reserved documentation ranges and
+  removed setup-specific UI screenshots in favor of a neutral text walkthrough.
+
+### Known firmware audit findings
+- The firmware registry currently contains three unexpected duplicate names
+  (`espnowenabled`, `pendinglist`, `serialrequireauth`) plus the intentional
+  `voicecancel` alias. The skill reports registry entries as-is; it does not hide or
+  modify firmware-owned metadata.
+- Seven settings are intentionally or currently CLI-unlinked, and `espnowchannel`
+  documents `1–13` while its stored setting accepts `0–13` (`0` is the review case).
+- The firmware-authored `even_g2` module overview still mentions the removed standalone
+  `g2mic` name; the registered `g2mic*` bullet rows are authoritative.
+
 ## [1.6.0] — 2026-08-02
 
 ### Added

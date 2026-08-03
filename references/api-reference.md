@@ -1,671 +1,268 @@
-# HardwareOne CLI Reference
-
-**This is a custom embedded CLI on an ESP32 microcontroller, NOT a Linux/Unix shell.**
-Standard commands like `ls`, `cd`, `cat`, `dir`, `ps`, `rm`, `cp`, `mv`, `df`, `mount`, `grep`, `find`, `echo`, `sysinfo`, `ifconfig`, `ping` DO NOT EXIST.
-The complete, always-current command list is in `{baseDir}/references/cli-commands.generated.md` (auto-generated from firmware). The sections in *this* file are a curated guide to the most-used commands, the feature model, and error handling — consult the generated catalog for exhaustive coverage. If a command is in neither file, it does not exist on this device. Everything is done through CLI commands (the `hardwareone_cli` tool); there is no HTTP API to call.
-
-## Quick Index — every command grouped by module
-
-<!-- This index is a derived summary of the "CLI Command Reference" section below, which is the canonical source. Keep the two in sync; if they ever disagree, the detailed reference wins. -->
-
-**System:** status, uptime, time, timeset(admin), reboot(admin), temperature, voltage, cpufreq(admin), memsample, memreport, taskstats, broadcast(admin), wait, lightsleep(admin)
-**WiFi:** openwifi, closewifi, wifistatus, wifiscan, wifilist, wifiadd(admin), wifirm(admin), wifipromote(admin), ntpsync
-**HTTP Server:** openhttp, closehttp, httpstatus, certinfo, certgen(admin)
-**Filesystem:** fsusage, files(admin), mkdir(admin), rmdir(admin), filecreate(admin), fileview(admin), filedelete(admin), filerename(admin)
-**SD Card:** sdmount, sdunmount, sdformat(admin), sdinfo, sddiag
-**Users:** login, logout, userlist(admin), useradd(admin), userdelete(admin), userchangepassword, userresetpassword(admin), userpromote(admin), userdemote(admin), userrequest, userapprove(admin), userdeny(admin), pendinglist(admin), usersync(admin), sessionlist(admin), sessionrevoke(admin), serialrequireauth(admin), ban(admin), unban(admin), banlist(admin), banuser(admin), unbanuser(admin)
-**Sensors — pattern:** open<sensor>, <sensor>read, close<sensor>, <sensor>autostart
-**Thermal:** openthermal, closethermal, thermalread, thermalautostart, thermaldiag, thermalpollingms, thermalpalettedefault, thermalrotation, thermalinterpolationenabled, thermalinterpolationsteps, thermalupscalefactor, thermaltargetfps, thermaldevicepollms, thermaltemporalalpha, thermalewmafactor
-**IMU:** openimu, closeimu, imuread, imuautostart, imuactions, imupollingms, imudevicepollms, imuorientationmode, imuorientationcorrection, imupitchoffset, imurolloffset, imuyawoffset, imuewmafactor
-**ToF:** opentof, closetof, tofread, tofautostart, tofpollingms, tofdevicepollms, tofmaxdistancemm, tofstabilitythreshold
-**GPS:** opengps, closegps, gpsread, gpsautostart, gpslog
-**APDS:** openapds, closeapds, apdsread, apdsmode, apdscolor, apdsproximity, apdsgesture, apdsautostart
-**Presence:** openpresence, closepresence, presenceread, presencestatus, presenceautostart
-**RTC:** openrtc, closertc, rtcread, rtcset(admin), rtcsync, rtcautostart
-**Camera:** opencamera, closecamera, cameraread, cameracapture, camerasave, camerares, cameraquality, camerabrightness, cameracontrast, camerasaturation, cameraexposure, cameraeffect, cameraaec, cameraagc, camerahmirror, cameravflip, cameraautostart, cameraautocapture, cameraautocaptureinterval, camerasendaftercapture, cameratargetdevice, camerastoragelocation, cameratiny (+ many more — see CLI reference)
-**Microphone:** openmic, closemic, micread, miclevel, micviz, micrecord, miclist, micdelete, micsamplerate, micgain, micbitdepth, micautostart
-**FM Radio:** openfmradio, closefmradio, fmradioread, fmradiotune, fmradioseek, fmradiovolume, fmradiomute, fmradiounmute, fmradioautostart
-**Servo/PWM:** servo, pwm, servoprofile, servolist, servocalibrate
-**Input / Gamepad:** openinput, closeinput, inputautostart, inputdevicepollms, gamepadread (raw debug)
-**OLED:** openoled, closeoled, oledstatus, oledmode, oledtext, oledclear, oledbrightness, oledupdateinterval, oledbootmode, oleddefaultmode, oledenabled
-**I2C Bus:** i2cscan, i2creset, i2cpause, i2cresume, i2crecover, i2cmetrics, i2cstats, i2chealth, sensors, sensorinfo, sensorautostart, devices, discover
-**ESP-NOW:** openespnow, closeespnow, espnowstatus, espnowstats, espnowlist, espnowpair, espnowunpair, espnowsend, espnowbroadcast, espnowsendfile, espnowbrowse, espnowfetch, espnowremote (+ mesh routing, identity, streaming, security — see "ESP-NOW Mesh" below)
-**Bonding:** bondconnect, bonddisconnect, bondstatus, bondrole, bondshowcap, bondrequestcap, bondshowmanifest, bondrequestmanifest, bondshowremotemanifest, bondstream, openstream(admin), closestream
-**MQTT:** openmqtt, closemqtt, mqttstatus, mqttautostart, mqttHost, mqttPort, mqttUser, mqttPassword, mqttBaseTopic, mqttTLSMode, mqttPublish* (per-sensor toggles), mqttSubscribeTopics, mqttExternalSensors
-**Automations:** automation, automationlist, automationadd, automationrun, autolog, validate-conditions, print
-**LLM:** llmstatus, llmload, llmunload, llmmodels, llmgenerate, llmstop
-**LED/NeoPixel:** ledcolor, ledeffect, ledclear, ledbrightness, ledstartupenabled, ledstartupeffect, ledstartupcolor, ledstartupcolor2, ledstartupduration
-**Bluetooth:** openble, closeble, blestatus, bleinfo, blename, bletxpower, bledisconnect, blesend, blestream, bleautostart, blerequireauth
-**Sensor Logging:** sensorlog start, sensorlog stop, sensorlog status, sensorlog format, sensorlog maxsize, sensorlog rotations, sensorlog sensors
-**Maps:** maplist, mapload, mapunload, map, whereami, search, waypoint, gpstrack, gpslog
-**Images:** capture, images, imageview, imagedelete, imagesend
-**Power:** power, power mode, power auto, batterystatus, batterycalibrate(admin), batterylog
-**Settings:** wifiautoreconnect, ntpserver, tzoffsetminutes, httpAutoStart, httpsEnabled, webclihistorysize, beginwrite, savesettings
-**Debug:** debug<flagname> <0|1> (see "Debug Flags" below)
-**Features:** features, featuresetup(admin)
-**CLI Navigation:** help, back, exit, clear
-
-## Feature → Command Mapping
-
-**Not all commands exist on every device.** Run `features` first. If a feature shows `[N/C]` (not compiled), ALL commands in that group will return "Unknown command" — do not attempt them.
-
-| Feature ID    | Commands (only exist if feature is `[ON]` or `[OFF]`) |
-|---------------|-------------------------------------------------------|
-| `wifi`        | openwifi, closewifi, wifistatus, wifiscan, wifilist, wifiadd, wifirm, wifipromote, ntpsync |
-| `http`        | openhttp, closehttp, httpstatus, certinfo, certgen |
-| `bluetooth`   | openble, closeble, blestatus, bleinfo, blename, blesend, blestream |
-| `espnow`      | openespnow, closeespnow, espnowstatus, espnowlist, espnowpair, espnowsend, espnowbroadcast, espnowremote, + all mesh/bonding commands |
-| `mqtt`        | openmqtt, closemqtt, mqttstatus, mqttHost, mqttPort, mqttPublish*, mqttSubscribe* |
-| `oled`        | openoled, closeoled, oledstatus, oledtext, oledclear, oledbrightness, oledmode |
-| `led`         | ledcolor, ledeffect, ledbrightness, ledstartupenabled, ledstartupeffect |
-| `i2c`         | i2cscan, i2creset, i2cpause, i2cresume, i2chealth, i2cmetrics, sensors, devices, discover |
-| `thermal`     | openthermal, closethermal, thermalread, thermalautostart, thermaldiag, + all thermal* settings |
-| `tof`         | opentof, closetof, tofread, tofautostart, + all tof* settings |
-| `imu`         | openimu, closeimu, imuread, imuautostart, imuactions, + all imu* settings |
-| `gps`         | opengps, closegps, gpsread, gpsautostart, gpslog |
-| `apds`        | openapds, closeapds, apdsread, apdsmode, apdscolor, apdsproximity, apdsgesture |
-| `rtc`         | openrtc, closertc, rtcread, rtcset, rtcsync |
-| `presence`    | openpresence, closepresence, presenceread, presenceautostart |
-| `camera`      | opencamera, closecamera, cameraread, cameracapture, camerasave, + all camera* settings |
-| `microphone`  | openmic, closemic, micread, miclevel, micrecord, miclist, + all mic* settings |
-| `fmradio`     | openfmradio, closefmradio, fmradioread, fmradiotune, fmradioseek, fmradiovolume |
-| `gamepad`     | opengamepad, closegamepad, gamepadread |
-| `espsr`       | Speech recognition commands (requires microphone) |
-| `edgeimpulse` | ML inference commands (requires camera) |
-| `automation`  | automation, automationlist, automationadd, automationrun, autolog, validate-conditions |
-
-**Always available** (no feature flag): status, uptime, time, temperature, voltage, memsample, memreport, taskstats, fsusage, features, help, login, logout
-
-## CLI Command Reference
-
-Run any command below via the `hardwareone_cli` tool — e.g. `hardwareone_cli { "command": "status" }`.
-
-> **For complete coverage of all ~820 commands** (with argument syntax and, for config commands, value ranges/defaults), read `{baseDir}/references/cli-commands.generated.md`; for all configurable settings, `{baseDir}/references/settings.generated.md`. Both are generated from the firmware by `tools/sync_command_reference.py`. The curated sections below cover the common commands in more depth.
-
-### Core -- System
+# HardwareOne — Operating Reference
+
+This is the curated operating guide for the current HardwareOne command model. It
+explains how to choose and interpret commands; it intentionally does not duplicate
+the exhaustive generated catalogs:
+
+- [`cli-commands.generated.md`](cli-commands.generated.md) — every registered command,
+  its usage, feature gate, and privilege level.
+- [`settings.generated.md`](settings.generated.md) — every persisted setting and the
+  command or dispatcher form that edits it.
 
-```
-status                          - System status (WiFi, FS, memory)
-uptime                          - Device uptime
-time                            - Current time (uptime + NTP)
-timeset <YYYY-MM-DD HH:MM:SS>  - Set time (or unix timestamp)
-reboot                          - Restart device
-temperature                     - ESP32 internal temperature
-voltage                         - Supply voltage
-cpufreq                         - Get/set CPU frequency
-memsample                       - Memory snapshot with component breakdown
-memreport                       - Comprehensive memory report
-taskstats                       - FreeRTOS task statistics
-broadcast <message>             - Send message to all users (admin)
-wait <ms>                       - Delay execution
-lightsleep [seconds]            - Enter light sleep (default 20s)
-```
-
-### WiFi -- Network
-
-```
-openwifi [ssid]                 - Connect to WiFi
-closewifi                       - Disconnect
-wifistatus                      - Connection info
-wifiscan                        - Scan for APs
-wifilist                        - List saved networks
-wifiadd <ssid> <pass> [priority] [hidden]  - Save a network
-wifirm <ssid>                   - Remove saved network
-wifipromote <ssid>              - Promote to top priority
-ntpsync                         - Sync time from NTP
-```
-
-### HTTP Server
-
-```
-openhttp                        - Start HTTP/HTTPS server
-closehttp                       - Stop server
-httpstatus                      - Server status and IP
-certinfo                        - HTTPS certificate details
-certgen [rsa]                   - Generate self-signed cert (default: ECDSA P-256)
-```
+Both generated files identify the exact firmware source revision they came from.
 
-### Sensors -- I2C
+## Command discovery and dispatch
 
-Pattern: `open<sensor>` to enable, `<sensor>read` to read, `close<sensor>` to disable.
+The CLI registry is the canonical control surface shared by serial, web CLI, MQTT,
+BLE, OLED/G2 actions, automations, and remote command execution. The OpenClaw agent
+uses that same surface through `hardwareone_cli`.
 
-#### Thermal Camera (MLX90640)
-```
-openthermal                     - Start thermal sensor
-closethermal                    - Stop thermal sensor
-thermalread                     - Read min/max/avg temperature
-thermalautostart [on|off]       - Auto-start on boot
-thermaldiag                     - Run diagnostics
-thermalpollingms <50-5000>      - UI polling interval
-thermalpalettedefault <name>    - Palette: grayscale|iron|rainbow|hot|coolwarm
-thermalrotation <0-3>           - Rotate image (0/90/180/270)
-thermalinterpolationenabled <0|1>
-thermalinterpolationsteps <1-8>
-thermalupscalefactor <1-4>
-thermaltargetfps <1-8>
-thermaldevicepollms <100-2000>  - Hardware poll interval
-thermaltemporalalpha <0.0-1.0>  - Temporal smoothing
-thermalewmafactor <0.0-1.0>    - EWMA smoothing
-```
-
-#### IMU (BNO055 9-DoF)
-```
-openimu                         - Start IMU
-closeimu                        - Stop IMU
-imuread                         - Read orientation data
-imuautostart [on|off]           - Auto-start on boot
-imuactions                      - Action detection (tap, shake)
-imupollingms <50-2000>          - UI polling interval
-imudevicepollms <50-1000>       - Hardware poll interval
-imuorientationmode <0-8>
-imuorientationcorrection <0|1>
-imupitchoffset <-180..180>
-imurolloffset <-180..180>
-imuyawoffset <-180..180>
-imuewmafactor <0.0-1.0>
-```
+Command lookup has two rules that matter:
 
-#### Time-of-Flight (VL53L4CX)
-```
-opentof                         - Start ToF sensor
-closetof                        - Stop ToF sensor
-tofread                         - Read distance measurement(s)
-tofautostart [on|off]           - Auto-start on boot
-tofpollingms <50-5000>          - UI polling interval
-tofdevicepollms <100-2000>      - Hardware poll interval
-tofmaxdistancemm <100-10000>
-tofstabilitythreshold <0-50>
-```
-
-#### GPS (PA1010D)
-```
-opengps                         - Start GPS
-closegps                        - Stop GPS
-gpsread                         - Read location, speed, heading
-gpsautostart [on|off]           - Auto-start on boot
-gpslog [interval_ms]            - Start track logging
-```
+1. **Matching is case-insensitive.** Use the spelling shown in the catalog, but
+   `mqttHost` and `mqtthost` resolve to the same registry entry.
+2. **Matching uses the longest registered prefix.** HardwareOne supports both
+   one-word commands (`batterystatus`, `thermalread`) and dispatcher forms
+   (`automation list`, `power mode`, `sensorlog interval`). Do not mechanically
+   convert one style into the other.
 
-#### Gesture/Light/Proximity (APDS9960)
-```
-openapds                        - Start sensor
-closeapds                       - Stop sensor
-apdsread                        - Read status and data
-apdsmode <color|proximity|gesture> [on|off]  - Enable/disable mode
-apdscolor                       - Read color/RGB values
-apdsproximity                   - Read proximity
-apdsgesture                     - Read gesture (up/down/left/right)
-apdsautostart [on|off]          - Auto-start on boot
-```
+Use this discovery order:
 
-#### Presence/Motion (STHS34PF80 IR)
-```
-openpresence                    - Start presence sensor
-closepresence                   - Stop sensor
-presenceread                    - Read presence, motion, temperature
-presencestatus                  - Sensor status
-presenceautostart [on|off]      - Auto-start on boot
-```
+1. Search the generated catalog by capability or noun.
+2. Run `help` to list modules, then `help <module>` for that module's commands.
+3. If a call returns `Usage:`, follow that exact syntax.
+4. Use `help all` when a disconnected sensor's module is hidden from ordinary help.
 
-#### RTC (DS3231)
-```
-openrtc                         - Start RTC
-closertc                        - Stop RTC
-rtcread [status|temp]           - Read time or temp compensation
-rtcset <datetime|timestamp>     - Set RTC time
-rtcsync [to|from]               - Sync to/from system clock
-rtcautostart [on|off]           - Auto-start on boot
-```
+A help-module name is not automatically a command. For example, `battery` is a
+module and `batterystatus` is its live-reading command. Conversely, `automation` is
+a real dispatcher command and `automation list` is valid.
 
-#### Camera (ESP32-S3 only)
-```
-opencamera                      - Start camera
-closecamera                     - Stop camera
-cameraread                      - Camera status
-cameracapture                   - Capture frame
-camerasave                      - Save frame to storage
-camerares <res>                 - Resolution preset
-cameraquality <0-63>            - JPEG quality (lower = better)
-camerabrightness <-2..2>
-cameracontrast <-2..2>
-camerasaturation <-2..2>
-cameraexposure <-2..2>
-cameraeffect <0-6>              - Special effect (admin)
-cameraaec <on|off>              - Auto exposure
-cameraagc <on|off>              - Auto gain
-camerahmirror <on|off>
-cameravflip <on|off>
-cameraautostart <on|off>
-cameraautocapture <on|off>
-cameraautocaptureinterval <sec>
-camerasendaftercapture <on|off> - Send via ESP-NOW after capture
-cameratargetdevice <name>
-camerastoragelocation <0-2>     - LittleFS/SD/both
-cameratiny                      - Capture small frame (for ESP-NOW)
-```
+The generated catalog counts both **unique command names** and **registry entries**.
+If firmware registers a name twice, lookup uses the first matching slot; the second
+does not create a new capability.
 
-#### Microphone (ESP32-S3 only)
-```
-openmic                         - Start microphone
-closemic                        - Stop microphone
-micread                         - Microphone status
-miclevel                        - Current audio level
-micviz                          - Real-time level visualizer
-micrecord                       - Start/stop WAV recording
-miclist                         - List recordings
-micdelete                       - Delete recording(s)
-micsamplerate                   - Get/set sample rate
-micgain                         - Get/set gain
-micbitdepth                     - Get/set bit depth
-micautostart [on|off]
-```
+## Roles and authorization
 
-#### FM Radio (RDA5807)
-```
-openfmradio                     - Start FM radio
-closefmradio                    - Stop FM radio
-fmradioread                     - Tuner status
-fmradiotune <MHz>               - Tune (e.g., fmradiotune 101.5)
-fmradioseek [up|down]           - Seek next station
-fmradiovolume <0-15>
-fmradiomute / fmradiounmute
-fmradioautostart [on|off]
-```
+The device has four account ranks. The account stored in the host-side device
+registry determines what OpenClaw can run on a direct device; a mesh relay uses the
+target peer credentials stored host-side for that peer.
 
-#### Servo (PCA9685)
-```
-servo <channel> <angle>         - Move servo to angle
-pwm <channel> <value> [freq]    - Raw PWM output
-servoprofile <ch> <min> <max> <center> <name>  - Configure profile
-servolist                       - List profiles
-servocalibrate <channel>        - Calibration mode
-```
+| Role | CLI access |
+| ---- | ---------- |
+| `guest` | Authenticated, but command access is limited to `login` and `logout`. |
+| `user` | Ordinary, non-privileged commands. |
+| `admin` | Admin-marked settings and device-control commands. |
+| `superadmin` | Admin access plus identity, crypto, destructive, and authentication-posture commands. |
 
-#### Input — Gamepad / ANO Encoder
+The catalog marks privileged entries as *(admin)* or *(super admin)*. Super-admin is
+not another spelling for admin: an ordinary admin is intentionally refused. Current
+super-admin operations include `factoryreset`, certificate generation, SD formatting,
+mesh identity/passphrase changes, BLE secret/auth changes, and serial/display auth
+posture.
 
-The `input` module is the user-facing interface for whichever input device is present (Seesaw gamepad or ANO rotary encoder). The `gamepad` module is raw debug only.
-```
-openinput                       - Start input device (gamepad or ANO encoder)
-closeinput                      - Stop input device
-inputautostart [on|off]         - Auto-start on boot
-inputdevicepollms <ms>          - Hardware poll interval
-gamepadread                     - Read gamepad axes/buttons (raw debug; gamepad module)
-```
+Never work around a privilege error by retrying or by looking for credentials in the
+skill sandbox. Credentials are host-only. Report which privilege the device requires.
 
-#### OLED Display (SSD1306)
-```
-openoled                        - Start OLED
-closeoled                       - Stop OLED
-oledstatus                      - OLED status
-oledmode <mode>                 - Display mode
-oledtext <message>              - Custom text overlay
-oledclear                       - Clear display
-oledbrightness <0-255>
-oledupdateinterval <ms>         - Update interval (10-1000ms)
-oledbootmode <logo|status|thermal|off>
-oleddefaultmode <status|thermal|off>
-oledenabled <0|1>
-```
+## Compile, enable, autostart, and live state
 
-### I2C Bus Management
-```
-i2cscan                         - Scan bus for devices
-i2creset                        - Reset I2C bus
-i2cpause / i2cresume            - Pause/resume sensor polling
-i2crecover <address>            - Clear degraded state
-i2cmetrics                      - Bus performance metrics
-i2cstats                        - Bus error statistics
-i2chealth                       - Per-device health
-sensors [filter]                - List I2C sensors
-sensorinfo <name>               - Sensor details
-sensorautostart [sensor] [on|off]
-devices                         - I2C device registry
-discover                        - Re-scan I2C bus
-```
+HardwareOne now separates four different questions:
 
-### ESP-NOW Mesh
+| Layer | Question | Typical evidence/control |
+| ----- | -------- | ------------------------ |
+| Compile gate | Is the subsystem in this firmware build? | `features`: `[N/C]` means not compiled. |
+| Enabled setting | Is the subsystem allowed to run? | `<thing>enabled` or a feature control. |
+| Autostart setting | Should it start at normal boot? | `<thing>autostart`. |
+| Live state | Is it running or connected now? | `open*` / `close*`, or the subsystem's `status`. |
 
-```
-openespnow                      - Initialize ESP-NOW
-closeespnow                     - Deinitialize
-espnowstatus                    - Status and config
-espnowstats                     - Message/error counters
-espnowlist                      - List paired peers
-espnowpair <mac> <name>         - Pair with device
-espnowunpair <name_or_mac>      - Remove peer
-espnowsend <name_or_mac> <msg>  - Send message (auto-routes via mesh)
-espnowbroadcast <message>       - Broadcast to all
-espnowsendfile <name_or_mac> <path>                    - Send file
-espnowbrowse <name_or_mac> <user> <pass> [path]        - Browse remote FS
-espnowfetch <name_or_mac> <user> <pass> <path>         - Fetch remote file
-espnowremote <name_or_mac> <user> <pass> <cmd>         - Execute remote cmd
-```
+`[ON]` means compiled and enabled; `[OFF]` means compiled but disabled; `[N/C]`
+means the code is not in that build. An enabled subsystem can still be stopped right
+now, and an autostart setting does not itself start or stop it.
 
-#### Mesh Routing
-```
-espnowmode [direct|mesh]        - Get/set routing mode
-espnowmeshstatus                - Peer health (heartbeats, ACKs)
-espnowmeshmetrics               - Routing metrics
-espnowmeshttl [1-10|adaptive]   - Get/set TTL
-espnowmeshtopo                  - Discover topology (master only)
-espnowtimesync                  - Broadcast NTP time (master only)
-espnowtimestatus                - Time sync status
-```
+Examples in the current registry include `wifienabled` + `wifiautostart`,
+`cameraenabled` + camera autostart, `bleenabled`, `espnowautostart`,
+`sensorlogenabled`, and sensor-specific enable controls such as `thermalenabled`.
+Use the settings catalog rather than assuming every subsystem exposes both axes under
+the same spelling.
 
-#### Device Identity
-```
-espnowsetname [name]            - Get/set device name
-espnowroom [name]               - Get/set room
-espnowzone [name]               - Get/set zone
-espnowtags [tag1,tag2,...]      - Get/set tags
-espnowfriendlyname [name]       - Get/set friendly name
-espnowstationary [0|1]          - Get/set stationary flag
-espnowdeviceinfo                - All local metadata
-espnowdevices                   - All mesh devices (master)
-espnowrooms                     - Rooms and devices (master)
-espnowfind <query>              - Find by name, room, or tag
-espnowroomcmd <room> <cmd>      - Run cmd on all in room
-espnowtagcmd <tag> <cmd>        - Run cmd on all with tag
-```
+`ramflush` is a special one-boot recovery path: it snapshots what is running, reboots,
+and restores that live set without changing normal autostart settings. `ramflush
+status` reports what the last recovery boot restored.
 
-#### Sensor Streaming
-```
-espnowworker [show|on|off|interval <ms>|fields <list>]  - Worker reporting
-espnowsensorstream <sensor> <on|off>   - Stream to master (worker)
-espnowsensorstatus              - Remote sensor cache (master)
-```
+## Settings and persistence
 
-#### Security
-```
-espnowsetpassphrase "phrase"    - Set encryption passphrase
-espnowencstatus                 - Encryption status
-espnowpairsecure <mac> <name>   - Pair with encryption
-espnowrequestmeta <name_or_mac> - Pull metadata from peer
-espnowusersync [on|off]         - Credential sync across mesh
-```
+Setting-backed commands show type, range, default, enum options, secret, and read-only
+metadata in the generated catalogs.
 
-### Bonding (Master/Worker)
+- Run a setting command with no value when its usage supports reading the current
+  value; run it with the cataloged value to change it.
+- Ordinary setting commands persist their change immediately.
+- For several changes with one flash write, run `beginwrite`, make the changes, then
+  run `savesettings` to flush the deferred batch.
+- A `cmdKey` may be a dispatcher form such as `power mode` or `sensorlog interval`.
+- Secret values are not echoed. Read-only settings are device-managed and should not
+  be treated as writable merely because they appear in the settings catalog.
 
-Requires ENABLE_BONDED_MODE. Two devices share command registries.
+## Reading results correctly
 
-```
-bondconnect <mac_or_name>       - Connect to bonded peer
-bonddisconnect                  - Disconnect
-bondstatus                      - Bond status
-bondrole <master|worker>        - Set role
-bondshowcap                     - Local capability summary
-bondrequestcap                  - Request peer capabilities
-bondshowmanifest                - Local manifest (UI + CLI)
-bondrequestmanifest             - Request peer manifest
-bondshowremotemanifest [fwHash] - Show cached remote manifest
-bondstream <sensor> <on|off>    - Stream sensor to master (worker)
-openstream                      - Stream all output to ESP-NOW caller (admin)
-closestream                     - Stop streaming
-```
+### Lists are not measurements
 
-### Filesystem (LittleFS)
+Discovery commands such as `sensors`, `devices`, `features`, `i2cscan`, and peer lists
+describe what exists or is configured. They are not substitutes for a live read.
 
-```
-fsusage                         - Filesystem usage
-files [path]                    - List files (default '/')
-mkdir <path>                    - Create directory
-rmdir <path>                    - Remove directory
-filecreate <path> [content]     - Create file
-fileview <path> [offset]        - View file contents
-filedelete <path>               - Delete file
-filerename <oldpath> <newname>  - Rename file
-```
+- Battery voltage and charge: `batterystatus`
+- ESP32 internal temperature: `temperature`
+- Typical I2C sensor: `open<sensor>` → `<sensor>read` → optionally
+  `close<sensor>`
 
-### SD Card
-```
-sdmount                         - Mount SD card
-sdunmount                       - Unmount
-sdformat                        - Format as FAT32
-sdinfo                          - SD card info
-sddiag                          - Hardware diagnostics
-```
+Do not interpret a successful list command as the requested measurement.
 
-### MQTT (Home Assistant)
+### Sensor JSON
 
-```
-openmqtt                        - Start MQTT client
-closemqtt                       - Stop MQTT client
-mqttstatus                      - Connection status
-mqttautostart [0|1]             - Auto-connect on boot
-mqttHost [hostname]             - Broker host/IP
-mqttPort [port]                 - Broker port (default 1883)
-mqttUser [user|clear]           - Username
-mqttPassword [pass|clear]       - Password
-mqttBaseTopic [topic|auto]      - Base topic prefix
-mqttTLSMode [0|1|2]             - TLS (0=off, 1=verify, 2=no-verify)
-mqttCACertPath [path|clear]     - CA cert path
-mqttPublishIntervalMs [ms]      - Publish interval
-mqttDiscoveryPrefix [prefix]    - HA discovery prefix
-mqttPublishWiFi [0|1]
-mqttPublishSystem [0|1]
-mqttPublishThermal [0|1]
-mqttPublishToF [0|1]
-mqttPublishIMU [0|1]
-mqttPublishPresence [0|1]
-mqttPublishGPS [0|1]
-mqttPublishAPDS [0|1]
-mqttPublishRTC [0|1]
-mqttPublishInput [0|1]
-mqttSubscribeTopics [topics]    - External subscriptions
-mqttExternalSensors             - External sensor data via MQTT
-```
+Where a module exposes JSON, prefer it for structured work. Current I2C sensor
+serializers generally include an envelope with `valid`, `connected`, and `ts`, then
+sensor-specific fields. Treat `valid:false`, `connected:false`, missing payloads, or an
+error field as state—not as a real zero reading. Exact shapes remain module-specific;
+use the command's help and returned keys.
 
-### Automations
+### Delivery is not completion
 
-```
-automation                      - System status
-automationlist                  - List all automations
-automationadd                   - Add automation (JSON)
-automationrun id=<id>           - Run by ID
-autolog start <file>            - Start execution log
-autolog stop                    - Stop log
-autolog status                  - Log status
-validate-conditions <expr>      - Validate syntax
-print <message>                 - Broadcast to all outputs
-```
+`OK`, a request ID, or exit code 0 can mean only that asynchronous work was accepted.
+Read the retriever named by the command's help:
 
-Automation syntax:
-```
-NAME: <name>
-SCHEDULE: TIME=HH:MM | INTERVAL=Xs/Xm/Xh | BOOT
-IF <condition> THEN <command>; <command>
-```
-Operators: `>`, `<`, `=`, `!=`, `CONTAINS` (tags only).
+| Operation | Where the result appears |
+| --------- | ------------------------ |
+| `espnowremote`, `espnowbrowse`, `espnowfetch`, room/tag remote calls | `espnowmessages json ...` |
+| `espnowrequestmeta` | `espnowdevices` cache |
+| `espnowmeshtopo` | `espnowtoporesults` |
+| secure key exchange | `espnowsessions` / `espnowencstatus` |
+| bonded manifest requests | `bondshowremotemanifest` |
+| guided/on-device LLM generation | `llmresult json 0` (use the generation cursor shown by help when supplied) |
+| G2 or R1 connection kickoff | the corresponding `g2status` / ring status command |
 
-### Users (Admin)
+Fire-and-forget sends do not produce a later response. Do not poll an unrelated buffer
+just because another ESP-NOW command uses it.
 
-```
-userlist                        - List all users
-useradd <user> <pass> [0|1]     - Create user (1=admin)
-userdelete <user>               - Delete user
-userchangepassword <cur> <new> <confirm>
-userresetpassword <user> <pass> [0|1]  - Reset password (admin)
-userpromote <user>              - Grant admin
-userdemote <user>               - Remove admin
-userrequest <user> <pass>       - Request account (self-reg)
-userapprove <user>              - Approve pending (admin)
-userdeny <user>                 - Deny pending (admin)
-pendinglist                     - Pending requests
-usersync <user> <target>        - Sync creds to ESP-NOW peer
-sessionlist                     - Active sessions
-sessionrevoke <sid|user> [reason]
-serialrequireauth [on|off]
-ban <ip> [reason]               - Ban IP (admin)
-unban <ip>                      - Remove ban
-banlist                         - List bans
-banuser <user> [reason]         - Ban account
-unbanuser <user>                - Remove account ban
-login <user> <pass>
-logout
-```
+## Current subsystem workflows
 
-### On-Device LLM
+### Events, automations, and notifications
 
-```
-llmstatus                       - Engine state, model config, PSRAM usage
-llmload [model.bin]             - Load model (default: /system/llm/model.bin)
-llmunload                       - Unload and free PSRAM
-llmmodels                       - List models on LittleFS + SD
-llmgenerate <prompt>            - Generate text (synchronous)
-llmstop                         - Stop in-progress generation
-```
+`events` shows the recent in-memory event ring that drives event automations.
+`events kinds` lists valid kinds; add `json` where documented for machine-readable
+output. `eventlog <0|1>` controls the durable structured event-history log.
 
-Generation modes: normal (natural language) or Do: (prompt ends with `Do:` token, outputs CLI command).
+The automation dispatcher supports forms such as:
 
-### LED / NeoPixel
+```text
+automation list
+automation add name=lowbatt type=event on=battery_low commands="ledcolor red" enabled=1
+automation run <name>
 ```
-ledcolor <color>                - Set color (name or hex)
-ledcolor off                    - Turn off
-ledclear                        - Turn off all LEDs
-ledeffect <effect>              - Run effect
-ledbrightness <0-100>
-ledstartupenabled [0|1]
-ledstartupeffect <none|rainbow|pulse|fade|blink|strobe>
-ledstartupcolor <color>
-ledstartupcolor2 <color>
-ledstartupduration <ms>
-```
-
-### Bluetooth (BLE)
 
-Requires ENABLE_BLUETOOTH.
+Single-word aliases such as `automationadd` remain in the registry, but prefer the
+syntax printed by current device help.
 
-```
-openble                         - Start BLE advertising
-closeble                        - Stop BLE
-blestatus                       - Connection status
-bleinfo                         - Config and settings
-blename [name]                  - Get/set device name
-bletxpower [0-7]
-bledisconnect
-blesend <message>               - Send to BLE client
-blestream <on|off|sensors|system>
-bleautostart [on|off]
-blerequireauth [on|off]
-```
+Notifications are a presentation layer over the event stream; suppressing a pop-up
+does not suppress the event or its automations. Device-wide controls are admin-only
+(`notifydevicebanners`, `notifydevicetoasts`, `notifydeviceg2`,
+`notifydevicequeue`, `notifydevicekind`). Per-user controls include `notifylevel`,
+`notifyusermute`, and `notifyusershow`. `notifstats` reports pipeline loss and
+suppression counters.
 
-### Sensor Logging
-```
-sensorlog start <sensor>        - Start logging to CSV
-sensorlog stop <sensor>         - Stop logging
-sensorlog status                - Active logs
-sensorlog format <sensor>       - Set format
-sensorlog maxsize <sensor>      - Max file size
-sensorlog rotations <sensor>    - Rotation count
-sensorlog sensors               - Loggable sensors
-```
+### Health capture and at-rest protection
 
-### Images
-```
-capture [littlefs|sd|both]      - Capture and save image
-images [littlefs|sd]            - List saved images
-imagedelete <path>              - Delete image
-imagesend <device> [path]       - Send via ESP-NOW
-```
+The current sensor-log module includes R1 health tracking:
 
-### Maps and Waypoints
+- `healthstatus [json|poll]` — live R1 vitals and tracking state.
+- `healthtrack <on|off|toggle|status|interval [sec]>` — manage health capture.
+- `healthlogmerge` — byte-concatenate logs in the stated order; it does not sort rows
+  or reconcile headers/formats.
+- `gpstrackmerge` — stitch GPS tracks in caller-supplied order.
+- `capturecrypt [status|off|health|all|export ...]` — choose at-rest sealing or export
+  an authorized plaintext copy.
 
-Requires ENABLE_MAPS.
+Changing `capturecrypt` mode applies at the next session/day rollover; a single file
+is not mixed-mode. Raw downloads and ESP-NOW file transfers preserve sealed bytes,
+while authorized viewers can decrypt. Treat exported plaintext as sensitive.
 
-```
-maplist                         - Available map files
-mapload <path>                  - Load map into memory
-mapunload                       - Unload map
-map                             - Current map + GPS position
-whereami                        - Location context (map, room, zone)
-search <name>                   - Search map features
-waypoint list / add / del / goto / clear
-gpstrack status / load / clear
-gpslog [interval_ms]            - Start GPS logging
-```
+### Even G2 glasses and R1 ring
 
-### Power and Battery
-```
-power                           - Power mode status
-power mode <mode>               - Set power mode
-power auto                      - Auto power management
-batterystatus                   - Battery voltage, charge %, charging state (one word; requires the battery feature)
-batterycalibrate                - Recalibrate the battery sensor (admin)
-batterylog                      - Battery time-series CSV log: on/off/interval/tail/clear
-```
+`g2glasses` reads or changes glasses-device settings such as brightness, auto
+brightness, wear detection, display position, silent mode, and unit formats.
+`g2health` opens the R1 health lens app. `g2nativenotify` creates a native lens card
+and is admin-only. Use `help even_g2` and `help even_r1` for the full, fast-changing
+surface.
 
-### Settings
-```
-wifiautoreconnect <0|1>
-ntpserver <hostname>
-tzoffsetminutes <-720..720>
-httpAutoStart <0|1>
-httpsEnabled <0|1>              - Enable HTTPS (reboot required)
-webclihistorysize <1-100>
-beginwrite                      - Start batch settings update
-savesettings                    - Flush to flash
-features                        - Show feature list with status and heap cost
-features <id> <on|off>          - Toggle a feature (admin)
-featuresetup                    - Feature config wizard (admin)
-```
+Connection commands such as `openg2` and `ringconnect` initiate work. Confirm the
+result from status rather than assuming the first `OK` means the link is ready.
 
-#### Feature States
+### On-device LLM
 
-The `features` command lists all registered features with their heap cost and current state:
+The LLM module now includes guided, indexed prompting and domain controls:
 
-| State   | Meaning |
-|---------|---------|
-| `[ON]`  | Feature is compiled into the firmware **and currently active**. It is using heap memory. |
-| `[OFF]` | Feature is compiled into the firmware but **disabled**. Can be toggled on with `features <id> on` (admin only). |
-| `[N/C]` | Feature is **not compiled** into this firmware build. Cannot be enabled — a different firmware build is required. |
+- `llmmenu` — inspect guided groups/templates/entities.
+- `llmask ...` — compose a guided question on-device.
+- `llmresult ...` — retrieve streamed generation output.
+- `llmdomaingate`, `llmconfthreshold`, `llmcontentboost`,
+  `llmnorepeatngram` — model behavior controls.
+- `llmprofile` — diagnostic forward-pass timing; disable unrelated LLM debug flags
+  for useful measurements.
 
-Only features showing `[ON]` or `[OFF]` can be toggled. Features showing `[N/C]` are absent from the firmware binary entirely.
+Model loading/generation may take minutes. A timeout is not evidence that the model
+was never started; inspect LLM status/result before launching duplicate work.
 
-Example output:
-```
- wifi         ~24KB  [ON]     ← active, using ~24KB heap
- bluetooth    ~12KB  [N/C]    ← not in this firmware build
- automation   ~ 8KB  [OFF]    ← compiled but currently disabled
-```
+### ESP-NOW discovery, pairing, and relay
 
-### Debug Flags
-```
-debug<flagname> 1               - Enable (persistent)
-debug<flagname> 1 temp          - Enable (runtime only)
-debug<flagname> 0               - Disable
-```
+For a consent-based same-mesh pairing:
 
-Flags: `debughttp`, `debugwifi`, `debugespnow`, `debugespnowcore`, `debugespnowmesh`, `debugespnowrouter`, `debugespnowstream`, `debugespnowmetadata`, `debugmqtt`, `debugautomations`, `debugsensors`, `debugstorage`, `debugcli`, `debugauth`, `debugperformance`, `debugsystem`, `debugusers`, `debugllm`, `debugllmload`, `debugllmtokenizer`, `debugllmforward`, `debugllmgenerate`, `debugllmmemory`.
+1. A super-admin sets the same mesh passphrase on both devices with
+   `espnowsetpassphrase <mesh> <passphrase>`.
+2. Open `espnowpairmode` on both devices.
+3. Inspect `espnowdiscovered`.
+4. Run `espnowpairrequest <peer>` on the requester.
+5. Run `espnowaccept [peer]` on the target (or `espnowreject`).
+6. Confirm the encrypted channel with `espnowsessions` / `espnowencstatus`.
 
----
+`espnowpairsecure <mac> <name> [mesh]` is also registered for explicit local pairing
+plus asynchronous key exchange. Plain `espnowpair` adds a local unencrypted registry
+entry and does not perform a remote handshake.
 
-## Error Handling
+When a peer is configured as `via:"mesh"`, the OpenClaw plugin performs
+`espnowremote` and result polling automatically. The direct relay device needs admin
+credentials, and the target peer's stored credentials must have the privilege required
+by the relayed command. For manual remote calls, remember that username/password are
+accounts on the **target** device.
 
-### Authentication Errors
+### Bonded peers
 
-JSON response `error` field values:
-- `auth_required` -- session expired or missing
-- `user_not_found` -- username does not exist
-- `password_not_allowed` -- incorrect password
+Bonding is an exclusive master/worker relationship layered over a secure session; it
+is not the same as ordinary mesh membership.
 
-Rate limiting on failed auth (tiered lockout):
-- 5 failed attempts --> 30 second lockout
-- 10 failed attempts --> 5 minute lockout
-- 20 failed attempts --> 30 minute lockout
+1. `bondconnect <peer>` initiates the bond.
+2. `bondstatus` is the source of truth for role, online state, and sync flags.
+3. `bondresync` requests fresh capability/manifest/settings state.
+4. `bondshowremotemanifest` shows the peer's cached manifest.
 
-### CLI Output Errors
+`bondshowcap` and `bondshowmanifest` describe the local device. Bonding does not make
+remote commands locally runnable; command execution still uses the ESP-NOW remote path.
 
-Any response starting with `Error:` or `Usage:` is a failure.
-- `Error: Not initialized` or `Error: Not started` -- sensor/module is off; run `open<module>` first
-- `Usage: <cmd> <args>` -- malformed command; check syntax above and retry
+### Camera
 
-### Sensor/Hardware Errors
+For OpenClaw visual questions, use `hardwareone_camera`, not CLI file paths. The tool
+captures the exact direct-device frame, describes it with the configured image model,
+and returns the image block. `camerares` can reduce capture size if the tool reports its
+image cap. Mesh-only peers cannot serve a camera image over HTTP/S.
 
-Prefixed with `[SensorName] Error:` for identification.
-- `[IMU] Error: Not connected. Check wiring.` -- hardware issue, do not retry
-- `[Thermal] Error: Failed to enqueue open (queue full)` -- system busy, wait and retry
-- `[GPS] Error: Module not connected or initialized` -- hardware issue
-- `[Servo] Error: PCA9685 not found at 0x40 - check wiring` -- hardware issue
+## Error handling
 
-For hardware errors: report the issue to the user. Do not retry.
-For queue/resource errors: wait briefly and retry once.
+| Response | Correct action |
+| -------- | -------------- |
+| `Unknown command` | Search the generated catalog; then run `help <module>`. Do not guess a web path. |
+| `Usage: ...` | Follow the printed syntax exactly, including dispatcher subcommands. |
+| `Not initialized` / `Not started` | Start the matching subsystem or sensor, then retry once. |
+| `Guest accounts are view-only` | The configured device account is a guest; command access is intentionally unavailable. |
+| `Admin access required` | Stop and report that the host-side account lacks admin privilege. |
+| `Super-admin access required` | Stop and report the stronger requirement; ordinary admin is insufficient. |
+| Authentication failure / HTTP 401 | Do not retry repeatedly; failed logins can trigger lockout. Ask the operator to correct host-side credentials. |
+| HTTP 403 | Read the returned body for admin vs super-admin detail; do not search the sandbox for credentials. |
+| Exit 0 / `OK` but no requested data | Determine whether the command is async or was only a setter/list operation. Never invent output. |
+| Timeout on a documented slow operation | Inspect its status/result before starting it again. |

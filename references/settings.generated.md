@@ -3,9 +3,9 @@
 <!-- GENERATED FILE — DO NOT EDIT BY HAND.
      Regenerate with: tools/sync_command_reference.py -->
 
-> Firmware commit `71bcd2c` · 409 settings · 389 linked to commands
+> Firmware source `ee87ea7` · 285 settings · 278 linked to commands
 
-Every persisted setting, grouped by area. Each setting is read/written by the CLI command shown (its `cmdKey`, else its key). Set a value with that command; persist with `savesettings`. Values marked **secret** are encrypted on disk and never echoed; **read-only** values are device-managed (e.g. counters).
+Every persisted setting, grouped by area. Each setting is read/written by the CLI command shown (its `cmdKey`, else its key). Ordinary setters persist immediately; use `beginwrite`, make several changes, then `savesettings` to batch one flash write. Values marked **secret** are encrypted on disk and never echoed; **read-only** values are device-managed (e.g. counters).
 
 
 ### anoEncoder
@@ -19,9 +19,11 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 - **Auto-start after boot** (`apdsAutoStart`) — setting · bool · default off · command `apdsautostart`
 - **Poll Interval (ms)** (`apdsDevicePollMs`) — setting · int 50–5000 · default 200 · command `apdsdevicepollms`
+- **Enabled** (`apdsEnabled`) — setting · bool · default on · command `apdsenabled`
 
 ### automation
 
+- **Auto-start at boot** (`automationAutoStart`) — setting · bool · default on · command `automationautostart`
 - **Automations Enabled** (`automationsEnabled`) — setting · bool · default on · command `automationsEnabled` _(no distinct command)_
 
 ### batteryLog
@@ -31,9 +33,10 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### bluetooth
 
+- **Enabled** (`bleEnabled`) — setting · bool · default on · command `bleenabled`
 - **Require Secure Channel** (`bleRequireSecureChannel`) — setting · bool · default on · command `blesecure`
 - **Secure Channel Secret** (`bleSecureChannelSecret`) — setting · string · default (hidden) · secret · command `blesecret`
-- **Auto-start at boot** (`bluetoothAutoStart`) — setting · bool · default on · command `bleautostart`
+- **Auto-start at boot** (`bluetoothAutoStart`) — setting · bool · default off · command `bleautostart`
 - **Device Name** (`bluetoothDeviceName`) — setting · string · default "HardwareOne" · command `blename`
 - **Mode (0=server, 1=g2)** (`bluetoothMode`) — setting · enum · default 0 (Server) · options 0=Server, 1=Client (G2) · command `blemode`
 - **Require Authentication** (`bluetoothRequireAuth`) — setting · bool · default on · command `blerequireauth`
@@ -49,6 +52,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Photo folder path** (`cameraCaptureFolder`) — setting · string · default "/photos" · command `cameracapturefolder`
 - **Contrast (-2 to 2)** (`cameraContrast`) — setting · int -2–2 · default 2 · command `cameracontrast`
 - **Denoise (0-8)** (`cameraDenoise`) — setting · int 0–8 · default 0 · command `cameradenoise`
+- **Enabled** (`cameraEnabled`) — setting · bool · default on · command `cameraenabled`
 - **Resolution** (`cameraFramesize`) — setting · enum · default 10 (240x240) · options 0=320x240 (QVGA), 1=640x480 (VGA), 2=800x600 (SVGA), 3=1024x768 (XGA), 4=1280x1024 (SXGA), 5=1600x1200 (UXGA), 6=96x96, 7=160x120 (QQVGA), 8=176x144 (QCIF), 9=240x176 (HQVGA), 10=240x240 · command `cameraframesize`
 - **Horizontal mirror** (`cameraHMirror`) — setting · bool · default off · command `camerahmirror`
 - **Max images (0=unlimited)** (`cameraMaxStoredImages`) — setting · int 0–1000 · default 100 · command `cameramaxstoredimages`
@@ -63,7 +67,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Vertical flip** (`cameraVFlip`) — setting · bool · default off · command `cameravflip`
 - **White Balance** (`cameraWBMode`) — setting · enum · default 0 (Auto) · options 0=Auto, 1=Sunny, 2=Cloudy, 3=Office, 4=Home · command `camerawb`
 - **G2 SD-pack animation cadence (ms per frame)** (`g2PackRateMs`) — setting · int 20–2000 · default 80 · command `g2packrate`
-- **G2 lens auto-levels (stretches washed-out frames to full range)** (`g2StreamToneMap`) — setting · bool · default on · command `g2streamtonemap`
+- **G2 lens 4-bpp tone** (`g2StreamToneMap`) — setting · enum · default 1 (Balanced) · options 0=Linear, 1=Balanced, 2=Shadows, 3=Legacy · command `g2streamtonemap`
 
 ### cli
 
@@ -76,170 +80,14 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### debug
 
-- **AFE / VAD** (`afe`) — setting · bool · default off · command `debugsrafe`
-- **Boot anchors** (`anchor`) — setting · bool · default off · command `debugdatetimeanchor`
-- **AutoStart** (`autoStart`) — setting · bool · default off · command `debugi2cautostart`
-- **Boot** (`boot`) — setting · bool · default off · command `debugsystemboot`
-- **Boot ID** (`bootId`) — setting · bool · default off · command `debugauthbootid`
-- **Broadcast** (`broadcast`) — setting · bool · default off · command `debugssebroadcast`
-- **Buffers** (`buffers`) — setting · bool · default off · command `debugmemorybuffers`
-- **Bus** (`bus`) — setting · bool · default off · command `debugi2cbus`
-- **Capture** (`capture`) — setting · bool · default off · command `debugcameracapture`
-- **Command match** (`command`) — setting · bool · default off · command `debugsrcommand`
-- **Commands** (`commands`) — setting · bool · default off · command `debugmqttcommands`
-- **Condition** (`condition`) — setting · bool · default off · command `debugautocondition`
-- **Config** (`config`) — setting · bool · default off · command `debugwificonfig`
-- **Config** (`config`) — setting · bool · default off · command `debugsystemconfig`
-- **Connection** (`connection`) — setting · bool · default off · command `debugsseconnection`
-- **Connection** (`connection`) — setting · bool · default off · command `debugwificonnection`
-- **Connection** (`connection`) — setting · bool · default off · command `debugmqttconnection`
-- **Context** (`context`) — setting · bool · default off · command `debugcmdflowcontext`
-- **Cookies** (`cookies`) — setting · bool · default off · command `debugauthcookies`
-- **Core** (`core`) — setting · bool · default off · command `debugespnowcore`
-- **Core** (`core`) — setting · bool · default off · command `debugbluetoothcore`
-- **Data** (`data`) — setting · bool · default off · command `debugbluetoothdata`
-- **Discovery** (`discovery`) — setting · bool · default off · command `debugi2cdiscovery`
-- **Discovery** (`discovery`) — setting · bool · default off · command `debugmqttdiscovery`
-- **Driver** (`driver`) — setting · bool · default off · command `debugwifidriver`
-- **Dump** (`dump`) — setting · bool · default off · command `debugg2dump`
-- **All Authentication** (`enabled`) — setting · bool · default off · command `debugauth`
-- **All HTTP** (`enabled`) — setting · bool · default off · command `debughttp`
-- **All HTTPS/TLS** (`enabled`) — setting · bool · default off · command `debughttps`
-- **All SSE** (`enabled`) — setting · bool · default off · command `debugsse`
-- **All WiFi** (`enabled`) — setting · bool · default off · command `debugwifi`
-- **All Storage** (`enabled`) — setting · bool · default off · command `debugstorage`
-- **All ESP-NOW** (`enabled`) — setting · bool · default off · command `debugespnow`
-- **All Bluetooth** (`enabled`) — setting · bool · default off · command `debugbluetooth`
-- **All System** (`enabled`) — setting · bool · default off · command `debugsystem`
-- **All Users** (`enabled`) — setting · bool · default off · command `debugusers`
-- **All CLI** (`enabled`) — setting · bool · default off · command `debugcli`
-- **All Commands** (`enabled`) — setting · bool · default off · command `debugcommandflow`
-- **All Performance** (`enabled`) — setting · bool · default off · command `debugperformance`
-- **All Automations** (`enabled`) — setting · bool · default off · command `debugautomations`
-- **All Camera** (`enabled`) — setting · bool · default off · command `debugcamera`
-- **All OLED** (`enabled`) — setting · bool · default off · command `debugdisplay`
-- **All Microphone** (`enabled`) — setting · bool · default off · command `debugmicrophone`
-- **All GPS** (`enabled`) — setting · bool · default off · command `debuggps`
-- **All RTC** (`enabled`) — setting · bool · default off · command `debugrtc`
-- **All Presence** (`enabled`) — setting · bool · default off · command `debugpresence`
-- **All FM Radio** (`enabled`) — setting · bool · default off · command `debugfmradio`
-- **All Thermal** (`enabled`) — setting · bool · default off · command `debugthermal`
-- **All IMU** (`enabled`) — setting · bool · default off · command `debugimu`
-- **All Input** (`enabled`) — setting · bool · default off · command `debuginput`
-- **All ANO Encoder** (`enabled`) — setting · bool · default off · command `debuganoencoder`
-- **All ToF** (`enabled`) — setting · bool · default off · command `debugtof`
-- **All APDS** (`enabled`) — setting · bool · default off · command `debugapds`
-- **All Maps** (`enabled`) — setting · bool · default off · command `debugmaps`
-- **All LLM** (`enabled`) — setting · bool · default off · command `debugllm`
-- **All NTP/DateTime** (`enabled`) — setting · bool · default off · command `debugdatetime`
-- **Enabled** (`enabled`) — setting · bool · default off · command `debuglogger`
-- **All Memory** (`enabled`) — setting · bool · default off · command `debugmemory`
-- **All G2** (`enabled`) — setting · bool · default off · command `debugg2`
-- **All SR** (`enabled`) — setting · bool · default off · command `debugsr`
-- **All I2C** (`enabled`) — setting · bool · default off · command `debugi2c`
-- **All MQTT** (`enabled`) — setting · bool · default off · command `debugmqtt`
-- **Encryption** (`encryption`) — setting · bool · default off · command `debugespnowencryption`
-- **Events** (`events`) — setting · bool · default off · command `debugsseevents`
-- **Events** (`events`) — setting · bool · default off · command `debugg2events`
-- **Execution** (`execution`) — setting · bool · default off · command `debugcliexecution`
-- **Execution** (`execution`) — setting · bool · default off · command `debugautoexec`
-- **Files** (`files`) — setting · bool · default off · command `debugstoragefiles`
-- **Forward** (`forward`) — setting · bool · default off · command `debugllmforward`
-- **GATT** (`gatt`) — setting · bool · default off · command `debugbluetoothgatt`
-- **Generate** (`generate`) — setting · bool · default off · command `debugllmgenerate`
-- **Handlers** (`handlers`) — setting · bool · default off · command `debughttphandlers`
-- **Hardware** (`hardware`) — setting · bool · default off · command `debugsystemhardware`
-- **Heap** (`heap`) — setting · bool · default off · command `debugperfheap`
-- **Heap** (`heap`) — setting · bool · default off · command `debugmemoryheap`
-- **Heartbeat** (`heartbeat`) — setting · bool · default off · command `debugg2heartbeat`
-- **JSON** (`json`) — setting · bool · default off · command `debugstoragejson`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugcameralifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugmiclifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debuggpslifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugrtclifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugpresencelifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugfmradiolifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugthermallifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugimulifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debuginputlifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debuganoencoderlifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugtoflifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugapdslifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugg2lifecycle`
-- **Lifecycle** (`lifecycle`) — setting · bool · default off · command `debugsrlifecycle`
-- **Load / checkpoint** (`load`) — setting · bool · default off · command `debugllmload`
-- **Loading** (`loading`) — setting · bool · default off · command `debugmapsloading`
 - **Log Level** (`logLevel`) — setting · enum · default 3 (debug) · options 0=error, 1=warn, 2=info, 3=debug · command `loglevel`
-- **Login** (`login`) — setting · bool · default off · command `debugauthlogin`
-- **Management** (`management`) — setting · bool · default off · command `debugusersmgmt`
-- **Memory / PSRAM** (`memory`) — setting · bool · default off · command `debugllmmemory`
-- **Mesh** (`mesh`) — setting · bool · default off · command `debugespnowmesh`
-- **Metadata** (`metadata`) — setting · bool · default off · command `debugespnowmetadata`
-- **Migration** (`migration`) — setting · bool · default off · command `debugstoragemigration`
-- **Pages** (`pages`) — setting · bool · default off · command `debugg2pages`
-- **Performance** (`perf`) — setting · bool · default off · command `debugmapsperf`
-- **Permissions** (`permissions`) — setting · bool · default off · command `debugstoragepermissions`
-- **Polling** (`polling`) — setting · bool · default off · command `debugmicpolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debuggpspolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugrtcpolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugpresencepolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugfmradiopolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugthermalpolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugimupolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debuginputpolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debuganoencoderpolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugtofpolling`
-- **Polling** (`polling`) — setting · bool · default off · command `debugapdspolling`
-- **Protocol** (`protocol`) — setting · bool · default off · command `debugg2protocol`
-- **Pub/Sub** (`pubsub`) — setting · bool · default off · command `debugmqttpubsub`
-- **Query** (`query`) — setting · bool · default off · command `debugusersquery`
-- **Queue** (`queue`) — setting · bool · default off · command `debugcliqueue`
-- **Queue** (`queue`) — setting · bool · default off · command `debugcmdflowqueue`
-- **Registration** (`registration`) — setting · bool · default off · command `debugusersregister`
-- **Rendering** (`rendering`) — setting · bool · default off · command `debugmapsrendering`
-- **Requests** (`requests`) — setting · bool · default off · command `debughttprequests`
-- **Timestamp resolution** (`resolve`) — setting · bool · default off · command `debugdatetimeresolve`
-- **Responses** (`responses`) — setting · bool · default off · command `debughttpresponses`
-- **Router** (`router`) — setting · bool · default off · command `debugespnowrouter`
-- **Routing** (`routing`) — setting · bool · default off · command `debugcmdflowrouting`
 - **Sample Interval (sec)** (`sampleIntervalSec`) — setting · int 0–300 · default 30 · command `memorysampleintervalsec`
-- **Scanning** (`scanning`) — setting · bool · default off · command `debugwifiscanning`
-- **Scheduler** (`scheduler`) — setting · bool · default off · command `debugautoscheduler`
-- **Sessions** (`sessions`) — setting · bool · default off · command `debugauthsessions`
-- **Settings** (`settings`) — setting · bool · default off · command `debugstoragesettings`
-- **Settings** (`settings`) — setting · bool · default off · command `debugcamerasettings`
-- **Setup/configTime** (`setup`) — setting · bool · default off · command `debugdatetimesetup`
-- **Stack** (`stack`) — setting · bool · default off · command `debugperfstack`
-- **Stack** (`stack`) — setting · bool · default off · command `debugmemorystack`
-- **Stream** (`stream`) — setting · bool · default off · command `debugespnowstream`
-- **Streaming** (`streaming`) — setting · bool · default off · command `debughttpstreaming`
-- **Sync loop** (`sync`) — setting · bool · default off · command `debugdatetimesync`
-- **System** (`system`) — setting · bool · default off · command `debugcommandsystem`
-- **Tasks** (`tasks`) — setting · bool · default off · command `debugsystemtasks`
-- **Timing** (`timing`) — setting · bool · default off · command `debugperftiming`
-- **Timing** (`timing`) — setting · bool · default off · command `debugautotiming`
-- **Tokenizer** (`tokenizer`) — setting · bool · default off · command `debugllmtokenizer`
-- **Topology** (`topology`) — setting · bool · default off · command `debugespnowtopo`
-- **Tuning / threshold** (`tuning`) — setting · bool · default off · command `debugsrtuning`
-- **Validation** (`validation`) — setting · bool · default off · command `debugclivalidation`
-- **Values** (`values`) — setting · bool · default off · command `debugmicvalues`
-- **Values** (`values`) — setting · bool · default off · command `debuggpsvalues`
-- **Values** (`values`) — setting · bool · default off · command `debugrtcvalues`
-- **Values** (`values`) — setting · bool · default off · command `debugpresencevalues`
-- **Values** (`values`) — setting · bool · default off · command `debugfmradiovalues`
-- **Values** (`values`) — setting · bool · default off · command `debugthermalvalues`
-- **Values** (`values`) — setting · bool · default off · command `debugimuvalues`
-- **Values** (`values`) — setting · bool · default off · command `debuginputvalues`
-- **Values** (`values`) — setting · bool · default off · command `debuganoencodervalues`
-- **Values** (`values`) — setting · bool · default off · command `debugtofvalues`
-- **Values** (`values`) — setting · bool · default off · command `debugapdsvalues`
-- **Video** (`video`) — setting · bool · default off · command `debugcameravideo`
-- **Wake word** (`wake`) — setting · bool · default off · command `debugsrwake`
 - **Allow page console.log** (`webConsole`) — setting · bool · default off · command `webconsole`
 
 ### edgeImpulse
 
 - **Continuous Mode** (`continuous`) — setting · bool · default off · command `eicontinuous`
+- **Auto-start at boot** (`eiAutoStart`) — setting · bool · default on · command `eiautostart`
 - **Enable Inference** (`enabled`) — setting · bool · default off · command `eienable`
 - **Input Size** (`inputSize`) — setting · int 48–320 · default 96 · command `eiinputsize`
 - **Interval (ms)** (`intervalMs`) — setting · int 100–10000 · default 1000 · command `eiinterval`
@@ -249,8 +97,10 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### espnow
 
+- **Accept Sensor Control** (`acceptSensorControl`) — setting · bool · default off · command `espnowacceptsensorcontrol`
 - **Backup Master Enabled** (`backupEnabled`) — setting · bool · default off · command `espnowbackupenable`
 - **Backup MAC** (`backupMAC`) — setting · string · default (empty) · command `espnowmeshbackup`
+- **Backup Master Fingerprint** (`backupMasterFingerprint`) — setting · string · default (empty) · command `espnowbackupfingerprint`
 - **Bond Mode Enabled** (`bondModeEnabled`) — setting · bool · default off · command `espnowbondmodeenabled`
 - **Bond Peer MAC** (`bondPeerMac`) — setting · string · default (empty) · command `espnowbondpeermac`
 - **Bond Role** (`bondRole`) — setting · enum · default 0 (Worker (compute/network)) · options 0=Worker (compute/network), 1=Master (display/gamepad) · command `bondrole`
@@ -262,16 +112,17 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Auto-stream RTC** (`bondStreamRtc`) — setting · bool · default off · command `bondstreamrtc`
 - **Auto-stream Thermal** (`bondStreamThermal`) — setting · bool · default off · command `bondstreamthermal`
 - **Auto-stream ToF** (`bondStreamTof`) — setting · bool · default off · command `bondstreamtof`
-- **Skip heartbeat frames in capture** (`captureSkipHeartbeats`) — setting · bool · default on · command `espnowcaptureskipheartbeats` _(no distinct command)_
-- **Capture ESP-NOW traffic to SD card** (`captureToSd`) — setting · bool · default off · command `espnowcapturetosd` _(no distinct command)_
-- **Chunk Size** (`chunkSize`) — setting · int 100–212 · default 200 · command `espnowchunksize`
+- **Skip heartbeat frames in capture** (`captureSkipHeartbeats`) — setting · bool · default on · command `espnowcaptureskipheartbeats`
+- **Capture ESP-NOW traffic to SD card** (`captureToSd`) — setting · bool · default off · command `espnowcapturetosd`
+- **Preferred Channel (0=auto)** (`channel`) — setting · int 0–13 · default 0 · command `espnowchannel`
 - **Device Name** (`deviceName`) — setting · string · default (empty) · command `espnowsetname`
 - **ESP-NOW Enabled** (`enabled`) — setting · bool · default off · command `espnowenabled`
+- **Auto-start at boot** (`espnowAutoStart`) — setting · bool · default on · command `espnowautostart`
 - **Failover Timeout (ms)** (`failoverTimeout`) — setting · int 5000–120000 · default 20000 · command `espnowfailovertimeout`
-- **File Chunk Size** (`fileChunkSize`) — setting · int 100–216 · default 216 · command `espnowfilechunksize`
 - **First Time Setup** (`firstTimeSetup`) — setting · bool · default off · command `espnowfirsttimesetup`
 - **Friendly Name** (`friendlyName`) — setting · string · default (empty) · command `espnowfriendlyname`
 - **Heartbeat Broadcast** (`heartbeatBroadcast`) — setting · bool · default on · command `espnowheartbeatbroadcast`
+- **Master Fingerprint** (`masterFingerprint`) — setting · string · default (empty) · command `espnowmasterfingerprint`
 - **Heartbeat Interval (ms)** (`masterHeartbeatInterval`) — setting · int 1000–60000 · default 10000 · command `espnowheartbeatinterval`
 - **Master MAC** (`masterMAC`) — setting · string · default (empty) · command `espnowmeshmaster`
 - **Mesh Mode** (`mesh`) — setting · bool · default off · command `espnowmode`
@@ -280,13 +131,11 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Mesh Role** (`meshRole`) — setting · enum · default 0 (Worker) · options 0=Worker, 1=Master, 2=Backup Master · command `espnowmeshrole`
 - **TTL** (`meshTTL`) — setting · int 1–10 · default 3 · command `espnowmeshttl`
 - **Room** (`room`) — setting · string · default (empty) · command `espnowroom`
-- **RX Buffer Size** (`rxBufferSize`) — setting · int 64–512 · default 256 · command `espnowrxbuffersize`
 - **Sensor Broadcast Interval (ms)** (`sensorBroadcastIntervalMs`) — setting · int 100–10000 · default 1000 · command `espnowsensorbroadcastinterval`
 - **Stationary** (`stationary`) — setting · bool · default off · command `espnowstationary`
 - **Tags** (`tags`) — setting · string · default (empty) · command `espnowtags`
 - **Auto Refresh Topology** (`topoAutoRefresh`) — setting · bool · default off · command `espnowtopoautorefresh`
 - **Topo Discovery Interval (ms)** (`topoDiscoveryInterval`) — setting · int 0–300000 · default 0 · command `espnowtopodiscoveryinterval`
-- **TX Queue Size** (`txQueueSize`) — setting · int 1–16 · default 8 · command `espnowtxqueuesize`
 - **User Sync Enabled** (`userSyncEnabled`) — setting · bool · default off · command `espnowusersync`
 - **Worker Status Interval (ms)** (`workerStatusInterval`) — setting · int 5000–120000 · default 30000 · command `espnowworkerstatusinterval`
 - **Zone** (`zone`) — setting · string · default (empty) · command `espnowzone`
@@ -295,21 +144,25 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 - **Auto-start at boot** (`srAutoStart`) — setting · bool · default off · command `srautostart`
 - **Command timeout (ms)** (`srCommandTimeout`) — setting · int 1000–30000 · default 6000 · command `srtimeout`
+- **Enabled** (`srEnabled`) — setting · bool · default on · command `srenabled`
 - **Model source (0=partition, 1=SD, 2=LittleFS)** (`srModelSource`) — setting · enum · default 0 (Partition) · options 0=Partition, 1=SD, 2=LittleFS · command `srmodelsource`
 
 ### fmRadio
 
 - **Auto-start after boot** (`fmRadioAutoStart`) — setting · bool · default off · command `fmradioautostart`
 - **Poll Interval (ms)** (`fmRadioDevicePollMs`) — setting · int 100–5000 · default 250 · command `fmradiodevicepollms`
+- **Enabled** (`fmRadioEnabled`) — setting · bool · default on · command `fmradioenabled`
 
 ### gps
 
 - **Auto-start after boot** (`gpsAutoStart`) — setting · bool · default off · command `gpsautostart`
 - **Poll Interval (ms)** (`gpsDevicePollMs`) — setting · int 50–10000 · default 200 · command `gpsdevicepollms`
+- **Enabled** (`gpsEnabled`) — setting · bool · default on · command `gpsenabled`
 
 ### http
 
 - **Auto-start at boot** (`httpAutoStart`) — setting · bool · default on · command `httpAutoStart`
+- **Enabled** (`httpEnabled`) — setting · bool · default on · command `httpenabled`
 - **Enable HTTPS (requires certs + reboot)** (`httpsEnabled`) — setting · bool · default off · command `httpsEnabled`
 - **Web CLI history size** (`webCliHistorySize`) — setting · int 1–100 · default 10 · command `webclihistorysize`
 
@@ -339,6 +192,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Auto-start after boot** (`imuAutoStart`) — setting · bool · default off · command `imuautostart`
 - **Poll Interval (ms)** (`imuDevicePollMs`) — setting · int 50–1000 · default 200 · command `imudevicepollms`
 - **EWMA Factor** (`imuEWMAFactor`) — setting · float · default 0.1 · command `imuewmafactor`
+- **Enabled** (`imuEnabled`) — setting · bool · default on · command `imuenabled`
 - **Orientation Correction** (`imuOrientationCorrectionEnabled`) — setting · bool · default on · command `imuorientationcorrection`
 - **Orientation Mode** (`imuOrientationMode`) — setting · enum · default 8 (Upside Down) · options 0=Normal, 1=Flip Pitch, 2=Flip Roll, 3=Flip Yaw, 4=Flip Pitch+Roll, 5=Roll 180 Fix, 6=Rotate 90 CCW, 7=Alt Extreme Pitch, 8=Upside Down · command `imuorientationmode`
 - **Pitch Offset** (`imuPitchOffset`) — setting · float · default 0.0 · command `imupitchoffset`
@@ -352,6 +206,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 - **Auto-start after boot** (`inputAutoStart`) — setting · bool · default off · command `inputautostart`
 - **Poll Interval (ms)** (`inputDevicePollMs`) — setting · int 10–1000 · default 90 · command `inputdevicepollms`
+- **Enabled** (`inputEnabled`) — setting · bool · default on · command `inputenabled`
 
 ### led
 
@@ -365,31 +220,38 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 ### llm
 
 - **Auto-start at boot** (`autoStart`) — setting · bool · default off · command `llmautostart`
+- **Confidence gate mean-logprob (0=off)** (`confThreshold`) — setting · float · default -1.0 · command `llmconfthreshold`
+- **Content boost (0=off)** (`contentBoost`) — setting · float · default 1.5 · command `llmcontentboost`
 - **Default Model** (`defaultModel`) — setting · string · default "model.bin" · command `llmdefaultmodel`
-- **Dynamic Temp** (`dynTemp`) — setting · bool · default off · command `llmdyntemp`
+- **Domain gate (refuse off-topic)** (`domainGate`) — setting · bool · default on · command `llmdomaingate`
 - **Hard Cap** (`hardCap`) — setting · int 0–512 · default 80 · command `llmhardcap`
-- **KV Cache (0=FP32,1=FP16,2=INT8, reload to apply)** (`kvPrecision`) — setting · enum · default 0 (FP32) · options 0=FP32, 1=FP16, 2=INT8 · command `llmkvprec`
-- **Max Context (0=auto)** (`maxContext`) — setting · int 0–4096 · default 0 · command `llmmaxcontext`
+- **KV Cache (0=FP32,1=FP16,2=INT8, reload to apply)** (`kvPrecision`) — setting · enum · default 1 (FP16) · options 0=FP32, 1=FP16, 2=INT8 · command `llmkvprec`
+- **Enabled** (`llmEnabled`) — setting · bool · default on · command `llmenabled`
+- **Max Context (0=auto)** (`maxContext`) — setting · int 0–LLM_SETTING_MAX_CONTEXT · default 0 · command `llmmaxcontext`
 - **Max Tokens** (`maxTokens`) — setting · int 1–512 · default 256 · command `llmmaxtokens`
 - **Min-P (0=off)** (`minP`) — setting · float · default 0.0 · command `llmminp`
-- **Mirostat Eta** (`mirostatEta`) — setting · float · default 0.1 · command `llmmirostateta`
-- **Mirostat Tau** (`mirostatTau`) — setting · float · default 5.0 · command `llmmirostattau`
+- **No-repeat n-gram (0=off)** (`noRepeatNgram`) — setting · int 0–8 · default 0 · command `llmnorepeatngram`
+- **Profiler (per-section fwd timing)** (`profile`) — setting · bool · default off · command `llmprofile`
 - **Rep Penalty** (`repPenalty`) — setting · float · default 1.3 · command `llmreppenalty`
-- **Rep Window** (`repWindow`) — setting · int 1–128 · default 32 · command `llmrepwindow`
+- **Rep Window** (`repWindow`) — setting · int 1–LLM_DEFAULT_REP_WINDOW · default 32 · command `llmrepwindow`
 - **Sentence Limit** (`sentenceLimit`) — setting · int 0–20 · default 2 · command `llmsentencelimit`
 - **Temperature** (`temperature`) — setting · float · default 0.5 · command `llmtemperature`
 - **Top-P** (`topP`) — setting · float · default 0.8 · command `llmtopp`
-- **Use Mirostat 2** (`useMirostat2`) — setting · bool · default off · command `llmusemirostat2`
 
 ### maps
 
-- **Tile cache size (KB, effective on next map load)** (`cacheSizeKB`) — setting · int 256–4096 · default 1024 · command `mapcachekb`
+- **Tile cache size (KB, effective on next map load)** (`cacheSizeKB`) — setting · int 256–4096 · default 1280 · command `mapcachekb`
 - **Visible layers (bitmask, 0-0x3FF)** (`layers`) — setting · int 0–0x3FF · default 0x3FF · command `maplayers`
 - **Default zoom (0.5-20.0)** (`zoom`) — setting · float · default 1.0 · command `mapzoom`
 
 ### mic
 
+- **Enabled** (`micEnabled`) — setting · bool · default on · command `micenabled`
+- **Mic source** (`micSource`) — setting · string · default "auto" · command `micsource`
 - **Auto-start after boot** (`microphoneAutoStart`) — setting · bool · default off · command `micautostart`
+- **Bit depth (cosmetic; WAV is always 16-bit)** (`microphoneBitDepth`) — setting · int 16–32 · default 16 · command `micbitdepth`
+- **Software gain (%)** (`microphoneGain`) — setting · int 0–100 · default 70 · command `micgain`
+- **Sample rate (Hz, PDM only)** (`microphoneSampleRate`) — setting · int 8000–48000 · default 16000 · command `micsamplerate`
 
 ### mqtt
 
@@ -417,14 +279,22 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **TLS Mode (0=None, 1=TLS, 2=TLS+Verify)** (`mqttTLSMode`) — setting · enum · default 0 (None) · options 0=None, 1=TLS, 2=TLS+Verify · command `mqttTLSMode`
 - **Username** (`mqttUser`) — setting · string · default (empty) · command `mqttUser`
 
+### notif
+
+- **OLED banners** (`notifBanners`) — setting · bool · default on · command `notifydevicebanners`
+- **G2 lens cards** (`notifG2`) — setting · bool · default on · command `notifydeviceg2`
+- **Notification center** (`notifQueue`) — setting · bool · default on · command `notifydevicequeue`
+- **Web toasts** (`notifToasts`) — setting · bool · default on · command `notifydevicetoasts`
+
 ### oled
 
+- **Auto-start at boot** (`oledAutoStart`) — setting · bool · default on · command `oledautostart`
 - **Boot Duration (ms)** (`oledBootDuration`) — setting · int 500–10000 · default 2000 · command `oledbootduration`
 - **Boot Mode** (`oledBootMode`) — setting · enum · default "logo" · options logo, status, sensors, thermal, network, mesh, off · command `oledbootmode`
 - **Brightness** (`oledBrightness`) — setting · int 0–255 · default 255 · command `oledbrightness`
 - **Default Mode** (`oledDefaultMode`) — setting · enum · default "status" · options logo, status, sensors, thermal, network, mesh, off · command `oleddefaultmode`
 - **OLED Enabled** (`oledEnabled`) — setting · bool · default off · command `oledenabled`
-- **Flip display 180°** (`oledFlipped`) — setting · bool · default on · command `oledflip`
+- **Flip display 180°** (`oledFlipped`) — setting · bool · default off · command `oledflip`
 - **Require Authentication** (`oledRequireAuth`) — setting · bool · default on · command `oledrequireauth`
 - **Thermal Color Mode** (`oledThermalColorMode`) — setting · enum · default "3level" · options 3level, grayscale · command `oledthermalcolormode`
 - **Thermal Scale** (`oledThermalScale`) — setting · float · default 2.5 · command `oledthermalscale`
@@ -432,23 +302,20 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### output
 
-- **Display Output** (`display`) — setting · bool · default off · command `outdisplay`
 - **Display Require Auth** (`displayRequireAuth`) — setting · bool · default on · command `displayrequireauth`
-- **G2 Glasses Output** (`g2`) — setting · bool · default off · command `outg2`
 - **Serial Output** (`serial`) — setting · bool · default on · command `outserial`
 - **Serial Require Auth** (`serialRequireAuth`) — setting · bool · default on · command `serialrequireauth`
 - **BLE Idle Logout (min, 0=off)** (`sessionIdleBle`) — setting · int 0–1440 · default 15 · command `sessionidleble`
 - **Display Idle Logout (min, 0=off)** (`sessionIdleDisplay`) — setting · int 0–1440 · default 60 · command `sessionidledisplay`
 - **Serial Idle Logout (min, 0=off)** (`sessionIdleSerial`) — setting · int 0–1440 · default 60 · command `sessionidleserial`
 - **Web Idle Logout (min, 0=off)** (`sessionIdleWeb`) — setting · int 0–1440 · default 60 · command `sessionidleweb`
-- **Web Output** (`web`) — setting · bool · default on · command `outweb`
 
 ### power
 
-- **Auto Mode** (`autoMode`) — setting · bool · default off · command `power auto` _(no distinct command)_
-- **Battery Threshold (%)** (`batteryThreshold`) — setting · int 0–100 · default 20 · command `power threshold` _(no distinct command)_
+- **Auto Mode** (`autoMode`) — setting · bool · default off · command `power auto`
+- **Battery Threshold (%)** (`batteryThreshold`) — setting · int 0–100 · default 20 · command `power threshold`
 - **Display Dim Level (%)** (`displayDimLevel`) — setting · int 0–100 · default 30 · command `powerdim`
-- **Power Mode** (`mode`) — setting · enum · default 0 · options Performance, Balanced, PowerSaver, UltraSaver · command `power mode` _(no distinct command)_
+- **Power Mode** (`mode`) — setting · enum · default 0 · options Performance, Balanced, PowerSaver, UltraSaver, Locked · command `power mode`
 - **Power saving (min, 0=disabled)** (`powerSaveMinutes`) — setting · int 0–1440 · default 10 · command `powersave`
 - **Sleep cooldown (ms, 0=disabled)** (`transitionCooldownMs`) — setting · int 0–60000 · default 5000 · command `powercooldown`
 
@@ -456,24 +323,35 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 - **Auto-start after boot** (`presenceAutoStart`) — setting · bool · default off · command `presenceautostart`
 - **Poll Interval (ms)** (`presenceDevicePollMs`) — setting · int 50–5000 · default 100 · command `presencedevicepollms`
+- **Enabled** (`presenceEnabled`) — setting · bool · default on · command `presenceenabled`
 
 ### rtc
 
 - **Auto-start after boot** (`rtcAutoStart`) — setting · bool · default on · command `rtcautostart`
+- **Enabled** (`rtcEnabled`) — setting · bool · default on · command `rtcenabled`
 - **RTC time has been set (NTP/manual)** (`rtcTimeHasBeenSet`) — setting · bool · default off · read-only · command `rtcTimeHasBeenSet` _(no distinct command)_
 
 ### sensorLog
 
-- **Auto-start logging after boot** (`sensorLogAutoStart`) — setting · bool · default off · command `sensorlog autostart` _(no distinct command)_
-- **Format (0=text,1=csv,2=track)** (`sensorLogFormat`) — setting · enum · default 0 (Text) · options 0=Text, 1=CSV, 2=Track · command `sensorLogFormat` _(no distinct command)_
-- **Poll interval (ms)** (`sensorLogIntervalMs`) — setting · int 100–3600000 · default 5000 · command `sensorlog interval` _(no distinct command)_
-- **Sensor bitmask** (`sensorLogMask`) — setting · int 0–255 · default 0 · command `sensorLogMask` _(no distinct command)_
-- **Log file path** (`sensorLogPath`) — setting · string · default "/logs/sensors/sensors.txt" · command `sensorlogpath`
+- **Capture at-rest encryption** (`captureEncryptMode`) — setting · enum · default 1 (Health) · options 0=Off, 1=Health, 2=All · command `capturecrypt`
+- **R1 Health poll interval (sec)** (`healthTrackPollIntervalSec`) — setting · int 60–86400 · default 900 · command `healthtrack interval`
+- **R1 Health Track** (`healthTrackingEnabled`) — setting · bool · default off · command `healthtrack`
+- **Auto-start logging after boot** (`sensorLogAutoStart`) — setting · bool · default off · command `sensorlog autostart`
+- **Enabled** (`sensorLogEnabled`) — setting · bool · default on · command `sensorlogenabled`
+- **Format** (`sensorLogFormat`) — setting · enum · default 0 (Text) · options 0=Text, 1=CSV, 2=Track · command `sensorlogformat`
+- **Poll interval (ms)** (`sensorLogIntervalMs`) — setting · int 100–3600000 · default 5000 · command `sensorlog interval`
+- **Sensors to log** (`sensorLogMask`) — setting · enum · default 0 · options bitmask:1|Thermal, ToF, IMU, Gamepad, APDS, GPS, Presence, R1 Health · command `sensorlogmask`
+- **Rotations (old logs to keep)** (`sensorLogMaxRotations`) — setting · int 0–9 · default 3 · command `sensorlog rotations`
+- **Max file size (bytes)** (`sensorLogMaxSize`) — setting · int 10240–10485760 · default 256000 · command `sensorlog maxsize`
+- **Log file path** (`sensorLogPath`) — setting · string · default (empty) · command `sensorlogpath`
 
 ### systemLog
 
-- **Auto-start logging after boot** (`systemLogAutoStart`) — setting · bool · default off · command `log autostart` _(no distinct command)_
+- **Structured event history (events.log)** (`eventLog`) — setting · bool · default on · command `eventlog`
+- **Auto-start logging after boot** (`systemLogAutoStart`) — setting · bool · default off · command `log autostart`
 - **Include category tags** (`systemLogCategoryTags`) — setting · bool · default on · command `logcategorytags`
+- **Enabled** (`systemLogEnabled`) — setting · bool · default on · command `systemlogenabled`
+- **Debug message categories** (`systemLogFlags`) — setting · string · default (empty) · command `systemlogflags`
 - **Log file path (empty = auto-generate)** (`systemLogPath`) — setting · string · default (empty) · command `systemLogPath` _(no distinct command)_
 
 ### thermal
@@ -481,6 +359,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Auto-start after boot** (`thermalAutoStart`) — setting · bool · default off · command `thermalautostart`
 - **Poll Interval (ms)** (`thermalDevicePollMs`) — setting · int 100–2000 · default 100 · command `thermaldevicepollms`
 - **EWMA Factor** (`thermalEWMAFactor`) — setting · float · default 0.2 · command `thermalewmafactor`
+- **Enabled** (`thermalEnabled`) — setting · bool · default on · command `thermalenabled`
 - **I2C Clock (Hz)** (`thermalI2cClockHz`) — setting · int 100000–1000000 · default 400000 · command `thermali2cclockhz`
 - **Interp. Buffer** (`thermalInterpolationBufferSize`) — setting · int 1–10 · default 2 · command `thermalinterpolationbuffersize`
 - **Interpolation** (`thermalInterpolationEnabled`) — setting · bool · default on · command `thermalinterpolationenabled`
@@ -501,6 +380,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 - **Auto-start after boot** (`tofAutoStart`) — setting · bool · default off · command `tofautostart`
 - **Poll Interval (ms)** (`tofDevicePollMs`) — setting · int 100–2000 · default 220 · command `tofdevicepollms`
+- **Enabled** (`tofEnabled`) — setting · bool · default on · command `tofenabled`
 - **I2C Clock (Hz)** (`tofI2cClockHz`) — setting · int 50000–400000 · default 200000 · command `tofi2cclockhz`
 - **Max Distance (mm)** (`tofMaxDistanceMm`) — setting · int 100–10000 · default 3400 · command `tofmaxdistancemm`
 - **Polling (ms)** (`tofPollingMs`) — setting · int 50–5000 · default 220 · command `tofpollingms`
@@ -509,9 +389,8 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### wifi
 
-- **Auto-reconnect** (`autoReconnect`) — setting · bool · default on · command `wifiautoreconnect`
-- **WiFi Enabled** (`enabled`) — setting · bool · default on · read-only · command `enabled` _(no distinct command)_
 - **NTP Server** (`ntpServer`) — setting · string · default "pool.ntp.org" · command `ntpserver`
-- **WiFi Password** (`password`) — setting · string · default (hidden) · secret · read-only · command `password` _(no distinct command)_
-- **WiFi SSID** (`ssid`) — setting · string · default (empty) · read-only · command `ssid` _(no distinct command)_
 - **Timezone** (`tzOffsetMinutes`) — setting · enum · default 0 (UTC+0 (London/GMT · Dublin)) · options -720=UTC-12 (Baker Island), -660=UTC-11 (Samoa), -600=UTC-10 (Hawaii/HST), -540=UTC-9 (Alaska/AKST), -480=UTC-8 (Pacific/PST), -420=UTC-7 (Mountain/MST · Pacific/PDT), -360=UTC-6 (Central/CST · Mountain/MDT), -300=UTC-5 (Eastern/EST · Central/CDT), -240=UTC-4 (Atlantic/AST · Eastern/EDT), -180=UTC-3 (Argentina · Atlantic/ADT), -120=UTC-2 (Mid-Atlantic), -60=UTC-1 (Azores), 0=UTC+0 (London/GMT · Dublin), 60=UTC+1 (Berlin/Paris/CET · London/BST), 120=UTC+2 (Cairo/Athens/EET · Paris/CEST), 180=UTC+3 (Moscow/Baghdad), 240=UTC+4 (Dubai/Baku), 300=UTC+5 (Karachi/Tashkent), 330=UTC+5:30 (Mumbai/Delhi/IST), 360=UTC+6 (Dhaka/Almaty), 420=UTC+7 (Bangkok/Jakarta), 480=UTC+8 (Beijing/Singapore), 540=UTC+9 (Tokyo/Seoul/JST), 570=UTC+9:30 (Adelaide/ACST), 600=UTC+10 (Sydney/AEST), 660=UTC+11 (Solomon Islands), 720=UTC+12 (Fiji/Auckland/NZST) · command `tzoffsetminutes`
+- **Auto-reconnect after drop** (`wifiAutoReconnect`) — setting · bool · default on · command `wifiautoreconnect`
+- **Connect at boot** (`wifiAutoStart`) — setting · bool · default on · command `wifiautostart`
+- **Enabled** (`wifiEnabled`) — setting · bool · default on · command `wifienabled`

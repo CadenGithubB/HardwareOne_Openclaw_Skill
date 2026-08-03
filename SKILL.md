@@ -14,7 +14,7 @@ triggers:
 
 # HardwareOne
 
-An ESP32-based IoT device with hundreds of CLI commands across 40+ modules (I2C sensors, camera, microphone, ESP-NOW mesh, MQTT, automations, speech recognition, on-device LLM, and more). You reach it through dedicated tools that the OpenClaw gateway runs on your behalf. You do **not** have direct network access — the tools are the *only* supported path to the device. There may be **one or more** devices (see *Multiple devices* below).
+An ESP32-based IoT device with nearly 900 unique CLI commands across 44 modules (I2C sensors, camera, microphone, ESP-NOW mesh, MQTT, automations, notifications, health capture, G2/R1 wearables, speech recognition, on-device LLM, and more). You reach it through dedicated tools that the OpenClaw gateway runs on your behalf. You do **not** have direct network access — the tools are the *only* supported path to the device. There may be **one or more** devices (see *Multiple devices* below).
 
 ## Available tools
 
@@ -58,12 +58,12 @@ Answer from the tool's **automatic visual description**. Do not call the separat
 
 If a command gave you a list when you wanted a value, running it again with different arguments will never help — you ran the wrong *kind* of command. Find the read command.
 
-`references/cli-commands.generated.md` is the **complete, authoritative** list of every command (with its admin flag, argument syntax, feature gate, and — for config commands — value type/range/default). Settings and their commands are in `references/settings.generated.md`.
+`references/cli-commands.generated.md` is the **complete, authoritative** list of every command (with its admin/super-admin flag, argument syntax, feature gate, and — for config commands — value type/range/default). Settings and their commands are in `references/settings.generated.md`.
 
 When you need a command — or one didn't do what you expected — work in this order:
 
 1. **Search the catalog by keyword.** Map the task to a word and look it up: peer metadata → search `meta` (you'll find `espnowrequestmeta`); a sensor → its name; a setting → its area. The command you need is almost always already there.
-2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments. The top-level `help` lists **modules** (categories like `battery`, `system`, `power`), **not** commands — a module name is not runnable on its own, so don't run `battery` or `system`; run `help <module>` to see its real commands — and note most are a **single word**, not `<module> <subcommand>` (e.g. the `battery` module's command is `batterystatus`, not `battery status`; `espnow` → `espnowstatus`).
+2. **Ask the device.** Run `help` or `help <module>` (e.g. `help espnow`) via `hardwareone_cli` to list that module's commands, and read the `Usage:` line the device prints when a command is called with wrong arguments. Top-level `help` lists **modules** (categories like `battery`, `system`, `power`), not necessarily runnable commands. Lookup is **case-insensitive and longest-prefix**: some capabilities are single words (`batterystatus`, not `battery status`), while registered dispatchers intentionally take subcommands (`automation list`, `power mode`, `sensorlog interval`). Use the exact catalog/help form; never mechanically convert between styles. `help all` includes disconnected sensor modules.
 3. Then pass the exact command name to `hardwareone_cli`.
 
 **Never web-search** for HardwareOne commands, errors, or behavior — this is a private device with no public documentation, so a web search returns nothing useful and only wastes turns. The catalog and the device's own `help`/`Usage:` output are the only sources of truth. If a command isn't in the catalog, it does not exist — don't invent or guess one.
@@ -76,18 +76,20 @@ When you need a command — or one didn't do what you expected — work in this 
 
 - Most commands take positional args — `<command> <arg> [arg]` — and the catalog's usage line shows the exact form.
 - Some commands take **key=value** pairs, automations especially: `automationadd name=morning type=atTime time=07:00 command=status`. Chain multiple commands in one value with `;` (`commands=cmd1;cmd2`).
-- To change a **setting**, run its command with the new value, then persist: `ledbrightness 80`, then `savesettings`. The settings catalog lists each setting's command, type, range, and options.
+- To change a **setting**, run its cataloged command with the new value. Ordinary setting commands persist immediately. For a multi-setting batch with one flash write, run `beginwrite`, make all changes, then `savesettings`. A setting command can be a dispatcher form such as `power mode`. The settings catalog lists type, range, options, secret/read-only state, and command.
 
-### 2. Check features first on an unfamiliar device
-Run `hardwareone_cli` with `command: "features"`. Each feature is marked:
+### 2. Check features and state on an unfamiliar device
+With an admin-capable configured account, run `hardwareone_cli` with `command: "features"`. Each feature is marked:
 
 - `[ON]` — active, its commands work
 - `[OFF]` — compiled but disabled; toggleable with admin rights
 - `[N/C]` — **not compiled**; its commands do not exist. Don't attempt them.
 
-### 3. Always-available commands (no feature flag required)
+Do not confuse this with runtime state. Current firmware separates the compile gate, a persisted `<thing>enabled` admission setting, a persisted `<thing>autostart` boot setting, and whether the subsystem is running now. An enabled subsystem can be stopped; autostart does not start it immediately. Use its `status` plus the settings catalog. `ramflush` restores the current live set for one reboot without changing normal autostart.
 
-`status`, `uptime`, `time`, `temperature`, `voltage`, `memsample`, `memreport`, `taskstats`, `fsusage`, `help`, `features`, `ledcolor`, `ledeffect`.
+### 3. Core commands (subject to the configured account's role)
+
+Common core commands include `status`, `uptime`, `time`, `temperature`, `voltage`, `memsample`, `memreport`, `taskstats`, `fsusage`, and `help`. `features` is admin-gated in current firmware. A `guest` account may run only `login` / `logout`; `user`, `admin`, and `superadmin` progressively unlock the catalog entries marked for those roles.
 
 ### 4. Sensor pattern
 
@@ -102,7 +104,7 @@ Most sensors use Enable → Read → Disable (only when `[ON]` or `[OFF]`):
 To just **run a command on a mesh device, target it by name** (see *Mesh devices* above) — the gateway relays it for you. The commands here are the underlying ESP-NOW mechanics, for mesh-specific operations: health, topology, identity/metadata, file transfer, and room/tag broadcasts.
 
 - **Mesh health & peers:** `espnowmeshstatus` (heartbeats/ACKs), `espnowlist` (paired peers), `espnowdevices` (all mesh devices, master). Full topology is `espnowmeshtopo` (async — see below).
-- **Encrypted peers.** A secure mesh pairs with `espnowpairsecure <mac> <name>` under a shared `espnowsetpassphrase`; that runs an async key exchange — confirm it with `espnowencstatus` / `espnowsessions`. Plain `espnowpair` is unencrypted. **Bonding (below) requires a secure session.**
+- **Encrypted peers.** The consent workflow is: a super-admin sets the same `espnowsetpassphrase <mesh> <phrase>` on both devices; open `espnowpairmode` on both; inspect `espnowdiscovered`; run `espnowpairrequest <peer>`; then `espnowaccept [peer]` (or `espnowreject`) on the target. Confirm with `espnowencstatus` / `espnowsessions`. `espnowpairsecure <mac> <name> [mesh]` remains the explicit local-pair + asynchronous key-exchange form. Plain `espnowpair` is unencrypted and performs no remote handshake. **Bonding (below) requires a secure session.**
 - Remote (bonded-worker) sensor readings land on the master — read them with `espnowsensorstatus`.
 - **Many peer commands are asynchronous** — they return `OK` on *delivery*; the real result arrives later, and **the retriever depends on the command** (each command's catalog/`help` line now names it — read that, don't assume):
   - `espnowremote` / `espnowfetch` / `espnowbrowse` / `espnowroomcmd` / `espnowtagcmd` → the message buffer: `espnowmessages json [<peer-mac>]`.
@@ -131,9 +133,13 @@ When unsure about a bond, read **`bondstatus`** — it's the single source of tr
 ### Common recipes
 
 - **Read a sensor:** `openthermal` → `thermalread` → `closethermal`.
-- **Change & save a setting:** `ledbrightness 80`, then `savesettings`.
+- **Change a setting:** `ledbrightness 80` persists immediately. For a batch: `beginwrite` → several setting commands → `savesettings`.
 - **Daily automation:** `automationadd name=morning type=atTime time=07:00 command=status` (time is device-local; set `tzoffsetminutes` first if needed).
 - **Battery / power:** `batterystatus` (one word — voltage + charge %); `power` for power mode. (`battery` is the help *module*; the command is `batterystatus`, **not** `battery status`. Needs the battery feature `[ON]`.)
+- **Event automation:** `automation add name=lowbatt type=event on=battery_low commands="ledcolor red" enabled=1`; list valid kinds with `events kinds`.
+- **R1 health:** `healthstatus json`; use `healthtrack status` before changing capture. `capturecrypt status` reports at-rest sealing.
+- **G2 settings:** `g2glasses show` (admin is required to change glasses settings); `g2health` opens the health lens app.
+- **Guided LLM:** inspect `llmmenu`, run `llmask ...`, then retrieve asynchronous output with `llmresult json 0` as its help directs.
 
 ## Error recovery
 
@@ -142,15 +148,18 @@ When unsure about a bond, read **`bondstatus`** — it's the single source of tr
 | `"Unknown command"` | Do NOT guess and do NOT web-search. Search `references/cli-commands.generated.md` by keyword, or run `help <module>` on the device. |
 | `"Error: Not initialized"` / `"Not started"` | Call the matching `open<sensor>` first. |
 | `"Usage: ..."` / `"Detailed usage: ..."` | The device is showing you the correct syntax — read it and retry with the right arguments. |
+| `"Guest accounts are view-only"` | The configured host-side account is a guest. Stop and ask the operator to use a sufficiently privileged account. |
+| `"Admin access required"` | Stop and report that the configured account lacks admin privilege. |
+| `"Super-admin access required"` | Stop and report the stronger requirement; ordinary admin is intentionally insufficient. |
 | Exit code 0 but no output | Report to the user; do not fabricate content. |
 | `"must be printable text"` | Your argument contained a control character (newline/tab) — remove it and retry. |
 | 401 / 403 / "authentication failed" | Credentials are **host-side and invisible to you** — you can't see or change them. Do NOT read `.env`, search the filesystem, or retry (repeated logins **lock the device**). Stop and report the auth failure to the user. |
 
 ## Reference files you can read
 
-- `references/cli-commands.generated.md` — **exhaustive** command catalog (firmware-generated). The authoritative list; read before guessing.
+- `references/cli-commands.generated.md` — **exhaustive** command catalog (firmware-generated), including admin/super-admin metadata and exact source revision. The authoritative list; read before guessing.
 - `references/settings.generated.md` — every configurable setting, grouped by area, with the command that reads/writes it.
-- `references/api-reference.md` — curated guide: the feature `[ON]/[OFF]/[N/C]` model, error handling, and the common commands in more depth.
+- `references/api-reference.md` — curated guide to dispatch semantics, roles, enable/autostart/live state, async results, and current events/health/G2/R1/LLM workflows.
 
 ## What you cannot read or use from this sandbox
 

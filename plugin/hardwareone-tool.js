@@ -536,15 +536,17 @@ export function createHardwareoneTools(api) {
       name: "hardwareone_cli",
       label: "HardwareOne CLI",
       description:
-        "Run a HardwareOne CLI command (e.g. 'status', 'features', 'temperature') on the default " +
+        "Run an exact HardwareOne CLI command (e.g. 'status', 'features', 'automation list') on the default " +
         "device, or on the device named by `device` — including access:mesh devices, which are relayed " +
-        "through the master automatically (just name them; the relay is async). Capabilities vary per " +
-        "device — run 'features' first on an unfamiliar one, and check hardwareone_devices for the " +
-        "operator's per-device description.",
+        "through the master automatically (just name them; the relay is async). Firmware lookup is " +
+        "case-insensitive and longest-prefix, so both one-word commands and documented dispatcher " +
+        "subcommands are valid. Capabilities and permissions vary per device — use the skill catalog/help, " +
+        "run 'features' with an admin-capable account on an unfamiliar device, and check " +
+        "hardwareone_devices for the operator's per-device description.",
       parameters: {
         type: "object",
         properties: {
-          command: { type: "string", description: "The CLI command, e.g. 'status' or 'features'." },
+          command: { type: "string", description: "Exact catalog/help command, e.g. 'status', 'features', or 'automation list'." },
           device: DEVICE_PARAM,
         },
         required: ["command"],

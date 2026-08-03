@@ -11,8 +11,8 @@
     "it. A 'backup' (also direct) becomes the",
     "default if the master is down.",
     "Two co-equal HTTP endpoints (no shared mesh)? Give BOTH a url and role:master, e.g.:",
-    "  \"node-a\": {\"url\":\"192.168.1.42\",\"role\":\"master\",\"user\":\"admin\",\"pass\":\"...\"},",
-    "  \"node-c\": {\"url\":\"192.168.1.77\",\"role\":\"master\",\"user\":\"admin\",\"pass\":\"...\"}",
+    "  \"node-a\": {\"url\":\"192.0.2.42\",\"role\":\"master\",\"user\":\"admin\",\"pass\":\"...\"},",
+    "  \"node-c\": {\"url\":\"192.0.2.77\",\"role\":\"master\",\"user\":\"admin\",\"pass\":\"...\"}",
     "and set \"default\" to the one bare commands should use; reach the other by name.",
     "Credentials: each DIRECT device needs its own url + user + pass. If ALL your devices truly share one",
     "login you can move user/pass up into 'defaults'; otherwise keep them per device (as below).",
@@ -31,7 +31,7 @@
   "default": "node-a",
   "defaults": { "allowSelfSigned": true },
   "devices": {
-    "node-a": { "url": "192.168.1.42", "role": "master", "user": "admin", "pass": "changeme", "description": "ESP32-S3 - thermal camera, mic, on-device LLM" },
-    "node-b": { "role": "worker", "via": "mesh", "user": "node-b", "pass": "changeme", "description": "battery ToF sensor node, mesh-only" }
+    "node-a": { "url": "192.0.2.42", "role": "master", "user": "admin", "pass": "replace-with-device-password", "description": "ESP32-S3 - thermal camera, mic, on-device LLM" },
+    "node-b": { "role": "worker", "via": "mesh", "user": "node-b", "pass": "replace-with-device-password", "description": "battery ToF sensor node, mesh-only" }
   }
 }

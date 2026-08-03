@@ -7,7 +7,7 @@
 # or a legacy skill-local .env. Keep them OUTSIDE the skill dir — OpenClaw mirrors the skill
 # directory into the agent sandbox, so a .env inside it would expose HW1_USER/HW1_PASS.
 # Required:
-#   HW1_URL    device address — just the IP/host (e.g. 192.168.1.42) and the wrapper auto-picks
+#   HW1_URL    device address — just the IP/host (e.g. 192.0.2.42 in documentation) and the wrapper auto-picks
 #              http or https, or a full URL (http://… / https://…) to pin the scheme.
 #   HW1_USER   device username
 #   HW1_PASS   device password
@@ -15,7 +15,8 @@
 # Optional:
 #   HW1_CONNECT_TIMEOUT   TCP connect timeout, seconds (default 5) — fail fast if offline
 #   HW1_TIMEOUT           per-request cap, seconds (default 30; covers ~12s password hashing)
-#   HW1_TIMEOUT_LONG      cap for slow commands: llmgenerate/llmload (default 300)
+#   HW1_TIMEOUT_LONG      cap for slow commands: model operations, camera startup,
+#                         and certificate generation (default 300)
 #   HW1_ALLOW_SELF_SIGNED=1  accept the device's self-signed TLS cert (curl -k) — trusted LAN only
 #                            (legacy alias: HW1_INSECURE=1)
 #   HW1_CACERT=/path.pem     verify TLS against this CA/cert (preferred over HW1_ALLOW_SELF_SIGNED)
@@ -232,6 +233,7 @@ do_cli() {
     case "$first" in
         llmgenerate|llmload) mt="$LONG_TIMEOUT" ;;  # model ops can run for minutes
         opencamera|camerastart) mt="$LONG_TIMEOUT" ;;  # camera power-up can block while the sensor warms up
+        certgen) mt="$LONG_TIMEOUT" ;;  # RSA-2048 certificate generation is documented as ~30-60s
     esac
 
     local attempt=0 max_attempts=2

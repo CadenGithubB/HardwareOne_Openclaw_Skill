@@ -5,7 +5,8 @@ the firmware source of truth.
 
 Every CLI command in the firmware is a `CommandEntry`:
 
-    { "name", "help", requiresAdmin /*bool*/, handler, "usage"/*opt*/, ...voice }
+    { "name", "help", requiresAdmin /*bool*/, handler, "usage"/*opt*/,
+      ...voice, requiresSuperAdmin /*bool, optional*/ }
 
 grouped into per-module arrays aggregated, in order and wrapped in their `#if`
 guards, by `gCommandModules[]` (System_Utils.cpp).
@@ -36,6 +37,7 @@ Exit codes: 0 ok / 1 --check stale / 2 parse or IO error
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -53,7 +55,8 @@ NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_\-]*$")
 SETTINGS_SUFFIX_RE = re.compile(r"(Settings?|Setting)(Entry|Entries)$")
 
 SRC_SUFFIXES = {".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"}
-PROVENANCE_PREFIX = "> Firmware commit"
+PROVENANCE_PREFIX = "> Firmware source"
+STUB_SOURCE_NAMES = {"System_SensorStubs.cpp"}
 NUMERIC_TYPES = {
     "SETTING_INT", "SETTING_U8", "SETTING_U16", "SETTING_U32",
     "SETTING_I32", "SETTING_FLOAT",
@@ -208,6 +211,11 @@ def _parse_command(body):
         "name": name,
         "help": (_as_str(f[1]) if len(f) > 1 else "") or "",
         "admin": len(f) > 2 and f[2].strip() == "true",
+        # CommandEntry has two constructor shapes. In both, super-admin is a
+        # trailing, defaulted bool: field 8 for two-level voice metadata or
+        # field 9 for three-level metadata. Existing voice fields are strings
+        # or nullptr, so a trailing literal true is unambiguous.
+        "superadmin": len(f) >= 8 and f[-1].strip() == "true",
         "usage": _as_str(f[4]) if len(f) > 4 else None,
     }
 
@@ -333,7 +341,8 @@ def collect(firmware: Path):
     roots = [firmware / "components" / "hardwareone", firmware / "main"]
     files = sorted(
         p for root in roots if root.is_dir()
-        for p in root.rglob("*") if p.suffix in SRC_SUFFIXES
+        for p in root.rglob("*")
+        if p.suffix in SRC_SUFFIXES and p.name not in STUB_SOURCE_NAMES
     )
     if not files:
         raise SystemExit(f"error: no firmware sources under {roots[0]} — check --firmware")
@@ -485,7 +494,14 @@ def _emit_module_row(row_text, cond, modules, warnings):
 
 
 def _join_settings(modules, settings, warnings):
-    """Attach each setting to its CLI command (cmdKey, else jsonKey, else area+key)."""
+    """Attach each setting to its CLI command (cmdKey, else jsonKey, else area+key).
+
+    Some settings intentionally use a dispatcher plus subcommand as cmdKey
+    (`power mode`, `sensorlog interval`). Those are valid because firmware
+    lookup is longest-prefix. Keep the full editor command in the settings
+    catalog, but do not attach it as a one-to-one annotation on the base
+    dispatcher: several settings may share that single registry entry.
+    """
     by_lower = {}
     for mod in modules:
         for c in mod["commands"]:
@@ -502,10 +518,18 @@ def _join_settings(modules, settings, warnings):
             hit["setting"] = s
             s["command"] = hit["name"]
             matched += 1
+        elif s["cmdKey"] and " " in s["cmdKey"]:
+            base = s["cmdKey"].split(None, 1)[0].lower()
+            if base in by_lower:
+                s["command"] = s["cmdKey"]
+                matched += 1
+            else:
+                s["command"] = None
         else:
             s["command"] = None
     return {
-        "commands": sum(len(m["commands"]) for m in modules),
+        "commands": len({c["name"].lower() for m in modules for c in m["commands"]}),
+        "registry_entries": sum(len(m["commands"]) for m in modules),
         "modules": len(modules),
         "settings": len(settings),
         "settings_matched": matched,
@@ -514,11 +538,51 @@ def _join_settings(modules, settings, warnings):
     }
 
 
-def firmware_commit(firmware: Path):
+def _source_files(firmware: Path):
+    roots = [firmware / "components" / "hardwareone", firmware / "main"]
+    return sorted(
+        p for root in roots if root.is_dir()
+        for p in root.rglob("*")
+        if p.suffix in SRC_SUFFIXES and p.name not in STUB_SOURCE_NAMES
+    )
+
+
+def _source_digest(firmware: Path) -> str:
+    """Stable digest of the source files this generator actually scans."""
+    digest = hashlib.sha256()
+    for path in _source_files(firmware):
+        try:
+            rel = path.relative_to(firmware).as_posix().encode()
+            digest.update(len(rel).to_bytes(4, "big"))
+            digest.update(rel)
+            data = path.read_bytes()
+            digest.update(len(data).to_bytes(8, "big"))
+            digest.update(data)
+        except OSError:
+            continue
+    return digest.hexdigest()[:12]
+
+
+def firmware_revision(firmware: Path):
+    """Git revision, annotated when the scanned firmware source is dirty.
+
+    Untracked research notes elsewhere in the firmware checkout do not make
+    generated catalogs look dirty; only the source roots consumed by collect()
+    count. A content digest makes an uncommitted snapshot reproducible.
+    """
     try:
-        r = subprocess.run(["git", "-C", str(firmware), "rev-parse", "--short", "HEAD"],
-                           capture_output=True, text=True, timeout=5)
-        return r.stdout.strip() or None
+        head = subprocess.run(
+            ["git", "-C", str(firmware), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+        if not head:
+            return None
+        dirty = subprocess.run(
+            ["git", "-C", str(firmware), "status", "--porcelain", "--untracked-files=all",
+             "--", "components/hardwareone", "main"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        return f"{head}+dirty.{_source_digest(firmware)}" if dirty else head
     except Exception:
         return None
 
@@ -526,7 +590,9 @@ def firmware_commit(firmware: Path):
 # ── rendering ────────────────────────────────────────────────────────────────
 def _command_line(c):
     line = f"- `{c['name']}`"
-    if c["admin"]:
+    if c.get("superadmin"):
+        line += " *(super admin)*"
+    elif c["admin"]:
         line += " *(admin)*"
     if c["help"]:
         line += f" — {c['help']}"
@@ -545,26 +611,32 @@ def render_commands(modules, commit, stats):
             "     Regenerate with: tools/sync_command_reference.py",
             "     Source of truth: firmware gCommandModules[] + SettingEntry tables. -->", ""]
     c = f"`{commit}`" if commit else "(unknown)"
-    out.append(f"{PROVENANCE_PREFIX} {c} · {stats['commands']} commands · {stats['modules']} modules")
+    out.append(f"{PROVENANCE_PREFIX} {c} · {stats['commands']} unique commands · "
+               f"{stats['registry_entries']} registry entries · {stats['modules']} modules")
     out += ["",
             "Generated directly from the firmware command tables, so it always matches the "
             "build it came from. **Feature gating still applies:** a module whose compile guard "
             "is not defined is absent entirely — run `features` on the device for live "
-            "`[ON]`/`[OFF]`/`[N/C]` state. Admin-only commands are marked *(admin)*. Commands "
+            "`[ON]`/`[OFF]`/`[N/C]` state. Lookup is case-insensitive and uses longest-prefix "
+            "matching, so both single-word commands and dispatcher forms such as "
+            "`automation list` are valid. Privileged commands are marked *(admin)* or "
+            "*(super admin)*. Commands "
             "backed by a stored setting show their value type / range / default / options; see "
-            "[`settings.generated.md`](settings.generated.md) for the full configuration view.",
+            "[`settings.generated.md`](settings.generated.md) for the full configuration view. "
+            "Module overviews are firmware-authored context; only the bullet rows beneath them "
+            "are registered commands.",
             "", "## Modules", "", "| Module | Compiled when | Commands |",
             "|--------|---------------|----------|"]
     for m in modules:
         gate = "always" if not m["guard"] else f"`{m['guard']}`"
         out.append(f"| `{m['name']}` | {gate} | {len(m['commands'])} |")
-    out.append(f"| **Total** | | **{stats['commands']}** |")
+    out.append(f"| **Total registry entries** | | **{stats['registry_entries']}** |")
     out += ["", "## Commands by module"]
     for m in modules:
         out += ["", f"### `{m['name']}` — {m['description']}", "",
                 "_Always compiled._" if not m["guard"] else f"_Requires `{m['guard']}`._", ""]
         if m.get("long_description"):
-            out += [m["long_description"], ""]
+            out += ["**Firmware module overview (context):** " + m["long_description"], ""]
         if not m["commands"]:
             out.append("_(no commands parsed)_")
             continue
@@ -582,8 +654,9 @@ def render_settings(settings, commit, stats):
                f"{stats['settings_matched']} linked to commands")
     out += ["",
             "Every persisted setting, grouped by area. Each setting is read/written by the CLI "
-            "command shown (its `cmdKey`, else its key). Set a value with that command; persist "
-            "with `savesettings`. Values marked **secret** are encrypted on disk and never echoed; "
+            "command shown (its `cmdKey`, else its key). Ordinary setters persist immediately; "
+            "use `beginwrite`, make several changes, then `savesettings` to batch one flash write. "
+            "Values marked **secret** are encrypted on disk and never echoed; "
             "**read-only** values are device-managed (e.g. counters).", ""]
     by_area: dict[str, list] = {}
     for s in settings:
@@ -717,7 +790,7 @@ def main(argv=None):
         return 2
 
     modules, settings, warnings, stats = collect(firmware)
-    commit = firmware_commit(firmware)
+    commit = firmware_revision(firmware)
 
     if args.audit:
         print(render_audit(modules, settings, commit))
@@ -726,7 +799,8 @@ def main(argv=None):
     if not args.quiet:
         print(f"firmware : {firmware}  (commit {commit or 'unknown'})")
         print(f"modules  : {stats['modules']}")
-        print(f"commands : {stats['commands']}  ({stats['with_usage']} with usage syntax)")
+        print(f"commands : {stats['commands']} unique / {stats['registry_entries']} registry entries  "
+              f"({stats['with_usage']} with usage syntax)")
         print(f"settings : {stats['settings']}  ({stats['settings_matched']} linked, "
               f"{stats['settings_orphan']} unlinked)")
         for w in warnings:
@@ -754,7 +828,8 @@ def main(argv=None):
         jp = Path(args.json)
         jp.parent.mkdir(parents=True, exist_ok=True)
         jp.write_text(json.dumps(
-            {"firmware_commit": commit, "stats": stats, "modules": modules, "settings": settings},
+            {"firmware_source": commit, "firmware_commit": commit, "stats": stats,
+             "modules": modules, "settings": settings},
             indent=2))
         if not args.quiet:
             print(f"wrote {jp}")

@@ -33,7 +33,7 @@ no longer wipe it. Re-run `deploy.sh` whenever the HardwareOne plugin changes.
 - **Input:** each tool validates length (≤ 512 chars), rejects control characters, and restricts device names to a safe charset.
 - **Process:** `spawn` with an argv array — never a shell, no `sh -c`. Command arguments can't be shell-interpreted on the host.
 - **Runtime:** per-call timeout; stdout capped at 64 KB, stderr at 4 KB.
-- **Credentials:** live only in the skill's host-side `.env`; they never enter the sandbox.
+- **Credentials:** live only in the host-side environment/registry outside the skill directory; they never enter the sandbox.
 
 ## Gotchas
 

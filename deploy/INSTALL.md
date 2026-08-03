@@ -54,7 +54,7 @@ The plugin targets OpenClaw 2026.7.1 or newer and imports the public plugin SDK.
 If runtime inspection does not show all HardwareOne tools, check the gateway log
 and `openclaw plugins inspect hardwareone --runtime --json`.
 
-## What's new in this drop
+## Current bundle highlights
 
 - **Camera understanding:** `hardwareone_camera` now sends the captured frame through
   OpenClaw's configured image-understanding runtime while the file is still available on
@@ -65,5 +65,11 @@ and `openclaw plugins inspect hardwareone --runtime --json`.
   everything through `hardwareone_cli`. Installing this drop unregisters the old tool
   (clean plugin install + the `openclaw.json` allowlist is pruned).
 - ESP-NOW **bonding** guidance and secure-pairing notes in `SKILL.md`.
+- Firmware-synced command/settings catalogs now distinguish unique command names from
+  registry entries, mark **super-admin** commands, understand dispatcher settings such
+  as `power mode`, and record dirty-source provenance when needed.
+- Agent guidance covers HardwareOne's current enable/autostart/live-state model,
+  consent-based ESP-NOW pairing, events/notifications, R1 health capture, G2 device
+  settings, and guided LLM commands.
 - The installer is now **authoritative**: `--delete` on the skill sync plus a clean plugin
   install drop anything an older version left behind (your host-side `.env` is preserved).
