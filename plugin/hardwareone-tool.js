@@ -66,6 +66,9 @@ function normalizeDevice(name, raw, defaults) {
     url: String(m.url),
     user: String(m.user),
     pass: String(m.pass),
+    // Plaintext fallback is deliberately per-device. A registry-wide default must
+    // never opt future devices into HTTP without an explicit entry-level choice.
+    allowHttp: Object.prototype.hasOwnProperty.call(raw, "allowHttp") && raw.allowHttp === true,
     allowSelfSigned: truthy(m.allowSelfSigned),
     cacert: m.cacert ? String(m.cacert) : "",
     connectTimeout: m.connectTimeout,
@@ -92,9 +95,15 @@ async function readJsonRegistry(warnings) {
     return null;
   }
   const defaults = json.defaults && typeof json.defaults === "object" ? json.defaults : {};
+  if (truthy(defaults.allowHttp)) {
+    warnings.push('defaults.allowHttp is ignored — set allowHttp:true on each direct device that may use plaintext HTTP');
+  }
   const devices = {};
   for (const [name, raw] of Object.entries(json.devices)) {
     if (!SAFE_DEVICE_RE.test(name)) { warnings.push(`ignored invalid device name '${name}'`); continue; }
+    if (raw && typeof raw === "object" && Object.prototype.hasOwnProperty.call(raw, "allowHttp") && typeof raw.allowHttp !== "boolean") {
+      warnings.push(`device '${name}' has a non-boolean allowHttp value — ignored; use the JSON boolean true for plaintext fallback`);
+    }
     const d = normalizeDevice(name, raw && typeof raw === "object" ? raw : {}, defaults);
     if (!d) {
       warnings.push(`device '${name}' is missing required fields — a direct device needs url+user+pass; a mesh device ("via":"mesh") needs user+pass (for the espnowremote relay) — skipped`);
@@ -131,6 +140,7 @@ async function readLegacyDevice(warnings) {
   if (!url || !user || !pass) return null;
   return {
     name: "default", via: "direct", url, user, pass, role: "master",
+    allowHttp: truthy(get("HW1_ALLOW_HTTP")),
     allowSelfSigned: truthy(get("HW1_ALLOW_SELF_SIGNED")) || truthy(get("HW1_INSECURE")),
     cacert: get("HW1_CACERT") || "",
   };
@@ -197,6 +207,7 @@ function runHw1(device, argv, opts = {}) {
     HW1_COOKIE_DIR: cookieDirFor(device.name),
   };
   delete env.HW1_INSECURE; // legacy alias — never let a stale global leak across devices
+  if (device.allowHttp) env.HW1_ALLOW_HTTP = "1"; else delete env.HW1_ALLOW_HTTP;
   if (device.allowSelfSigned) env.HW1_ALLOW_SELF_SIGNED = "1"; else delete env.HW1_ALLOW_SELF_SIGNED;
   if (device.cacert) env.HW1_CACERT = device.cacert; else delete env.HW1_CACERT;
   if (device.connectTimeout != null) env.HW1_CONNECT_TIMEOUT = String(device.connectTimeout);

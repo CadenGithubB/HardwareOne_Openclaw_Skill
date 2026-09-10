@@ -31,5 +31,8 @@ openclawdocs/
 # Copied-in reference only (the agent's notes skill); never publish
 notes/
 
+# Local audit and upgrade working notes; contains host-specific details
+REPO_UPGRADE_PLAN.md
+
 # Claude Code local config
 .claude/

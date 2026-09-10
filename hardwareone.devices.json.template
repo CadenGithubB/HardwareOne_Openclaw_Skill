@@ -24,14 +24,20 @@
     "- e.g. 'ESP32-S3, thermal camera + mic + on-device LLM' or 'battery ToF node, mesh-only'. It is shown",
     "to the agent via hardwareone_devices (names/roles/descriptions are the ONLY things the agent sees -",
     "never url/user/pass). Room/location/purpose still live on the device + memory note, NOT here.",
-    "allowSelfSigned: true accepts a device's self-signed HTTPS cert (trusted LAN); or pin 'cacert'.",
+    "Transport: prefer an explicit https:// URL. Explicit https:// and http:// URLs are pinned.",
+    "A bare host uses HTTPS; allowHttp:true permits HTTP only after HTTPS connection refusal.",
+    "allowHttp must be set on the individual device; defaults.allowHttp is ignored.",
+    "Plain HTTP is for a trusted, isolated LAN. Prefer an explicit http:// URL when it is intentional.",
+    "For self-signed HTTPS, prefer cacert:'/host/path/device-ca.pem' (the device cert SAN must match the URL).",
+    "allowSelfSigned:true disables certificate verification and is a trusted-LAN-only alternative.",
+    "allowHttp and allowSelfSigned are separate: neither one implies or enables the other.",
     "Advanced optional per-device fields: connectTimeout, timeout, timeoutLong, authProbe (seconds / path).",
     "Lines in this _help array are ignored by the parser - delete them or keep them, your choice."
   ],
   "default": "node-a",
-  "defaults": { "allowSelfSigned": true },
+  "defaults": { "allowSelfSigned": false },
   "devices": {
-    "node-a": { "url": "192.0.2.42", "role": "master", "user": "admin", "pass": "replace-with-device-password", "description": "ESP32-S3 - thermal camera, mic, on-device LLM" },
+    "node-a": { "url": "https://192.0.2.42", "role": "master", "user": "admin", "pass": "replace-with-device-password", "cacert": "/absolute/path/to/node-a-ca.pem", "description": "ESP32-S3 - thermal camera, mic, on-device LLM" },
     "node-b": { "role": "worker", "via": "mesh", "user": "node-b", "pass": "replace-with-device-password", "description": "battery ToF sensor node, mesh-only" }
   }
 }

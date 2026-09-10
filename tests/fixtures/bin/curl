@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+: "${FAKE_CURL_LOG:?FAKE_CURL_LOG is required}"
+
+{
+    printf 'CALL'
+    for arg in "$@"; do
+        printf '\t%s' "$arg"
+    done
+    printf '\n'
+} >> "$FAKE_CURL_LOG"
+
+printf 'ENV\t%s\t%s\t%s\t%s\n' \
+    "${CURL_CA_BUNDLE-unset}" \
+    "${SSL_CERT_FILE-unset}" \
+    "${SSL_CERT_DIR-unset}" \
+    "${SSLKEYLOGFILE-unset}" >> "$FAKE_CURL_LOG"
+
+output_file=""
+write_format=""
+max_filesize=""
+url=""
+args=( "$@" )
+i=0
+while [[ "$i" -lt "${#args[@]}" ]]; do
+    arg="${args[$i]}"
+    case "$arg" in
+        -o|--output)
+            i=$((i + 1))
+            output_file="${args[$i]}"
+            ;;
+        -w|--write-out)
+            i=$((i + 1))
+            write_format="${args[$i]}"
+            ;;
+        --max-filesize)
+            i=$((i + 1))
+            max_filesize="${args[$i]}"
+            ;;
+        http://*|https://*)
+            url="$arg"
+            ;;
+    esac
+    i=$((i + 1))
+done
+
+printf 'URL\t%s\n' "$url" >> "$FAKE_CURL_LOG"
+
+case "$url" in
+    https://*) mode="${FAKE_HTTPS_MODE:-valid}" ;;
+    http://*) mode="${FAKE_HTTP_MODE:-valid}" ;;
+    *) mode="transport_error" ;;
+esac
+
+code=200
+content_type="application/json"
+body='{"ok":true,"hostname":"hw-one","mac":"AA:BB:CC:DD:EE:FF","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","firmwareVersion":"0.99.92","acceptingRestore":false,"pendingConfirm":false,"https":true}'
+exit_code=0
+
+case "$mode" in
+    valid) ;;
+    valid_no_https)
+        body='{"ok":true,"hostname":"hw-one","mac":"AA:BB:CC:DD:EE:FF","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","firmwareVersion":"0.99.92","acceptingRestore":false,"pendingConfirm":false}'
+        ;;
+    valid_extra_data)
+        body='{"ok":true,"hostname":"hw-one","mac":"AA:BB:CC:DD:EE:FF","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","firmwareVersion":"0.99.92","acceptingRestore":false,"pendingConfirm":false,"https":true}
+unexpected-extra-data'
+        ;;
+    dns_error)
+        code=000
+        content_type=""
+        body=""
+        exit_code=6
+        ;;
+    refused)
+        code=000
+        content_type=""
+        body=""
+        exit_code=7
+        ;;
+    handshake_error)
+        code=000
+        content_type=""
+        body=""
+        exit_code=35
+        ;;
+    certificate_error)
+        code=000
+        content_type=""
+        body=""
+        exit_code=60
+        ;;
+    timeout)
+        code=000
+        content_type=""
+        body=""
+        exit_code=28
+        ;;
+    reset)
+        code=000
+        content_type=""
+        body=""
+        exit_code=56
+        ;;
+    redirect)
+        code=302
+        content_type="text/html"
+        body='<html><body>Continue elsewhere</body></html>'
+        ;;
+    not_found)
+        code=404
+        content_type="application/json"
+        body='{"ok":false,"error":"not found"}'
+        ;;
+    wrong_content_type)
+        content_type="text/html"
+        ;;
+    generic_json)
+        body='{"ok":true,"service":"not-hardwareone"}'
+        ;;
+    invalid_json)
+        body='{"ok":true'
+        ;;
+    wrong_fingerprint)
+        body='{"ok":true,"hostname":"hw-one","mac":"AA:BB:CC:DD:EE:FF","fingerprint":"not-a-fingerprint","firmwareVersion":"0.99.92","acceptingRestore":false,"pendingConfirm":false,"https":true}'
+        ;;
+    restore_identity)
+        body='{"ok":true,"mode":"restore","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pendingConfirm":false}'
+        ;;
+    oversized)
+        body='{"ok":true,"hostname":"hw-one","mac":"AA:BB:CC:DD:EE:FF","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","firmwareVersion":"0.99.92","padding":"'
+        while [[ "${#body}" -le 4200 ]]; do body+="x"; done
+        body+='"}'
+        ;;
+    transport_error)
+        code=000
+        content_type=""
+        body=""
+        exit_code=1
+        ;;
+    *)
+        echo "fake curl: unknown mode '$mode'" >&2
+        exit 99
+        ;;
+esac
+
+if [[ -n "$max_filesize" && "${#body}" -gt "$max_filesize" ]]; then
+    body="${body:0:max_filesize}"
+    exit_code=63
+fi
+printf 'BODY_BYTES\t%s\n' "${#body}" >> "$FAKE_CURL_LOG"
+
+if [[ -n "$output_file" ]]; then
+    printf '%s' "$body" > "$output_file"
+else
+    printf '%s' "$body"
+fi
+
+if [[ -n "$write_format" ]]; then
+    # The wrapper uses exactly these curl write-out variables. Reproduce their
+    # rendered form without trying to interpret arbitrary curl format strings.
+    if [[ "$write_format" == *$'\n'* ]]; then
+        printf '%s\n%s' "$code" "$content_type"
+    else
+        printf '%s' "$code"
+    fi
+fi
+
+exit "$exit_code"

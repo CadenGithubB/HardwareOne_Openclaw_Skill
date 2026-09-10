@@ -28,6 +28,20 @@ managed local-plugin workflow, wires the tool allowlists in
 The managed install is separate from the global OpenClaw npm package, so core upgrades
 no longer wipe it. Re-run `deploy.sh` whenever the HardwareOne plugin changes.
 
+## Device transport policy
+
+- Explicit `https://` and `http://` URLs are pinned to that scheme.
+- A bare host uses HTTPS. It may try HTTP after an HTTPS connection refusal only when
+  the selected device explicitly sets `allowHttp: true` (or `HW1_ALLOW_HTTP=1` for the
+  legacy single-device configuration). `defaults.allowHttp` is ignored so adding a
+  future device cannot silently inherit plaintext permission.
+- A certificate failure, timeout, redirect, or unrecognized ping response never causes
+  an HTTP downgrade.
+- `cacert` / `HW1_CACERT` is the preferred self-signed TLS trust path. The device
+  certificate must chain to that PEM and validate the URL hostname/IP. `allowSelfSigned: true` /
+  `HW1_ALLOW_SELF_SIGNED=1` disables verification and is for a trusted, isolated LAN.
+  Neither TLS option permits HTTP.
+
 ## Security boundary
 
 - **Input:** each tool validates length (≤ 512 chars), rejects control characters, and restricts device names to a safe charset.

@@ -70,12 +70,19 @@ verify the subsystem-specific result.
    ```
    Edit it so each line has your device's value:
    ```
-   HW1_URL=192.0.2.50            # documentation IP; replace with the device's address
+   HW1_URL=https://192.0.2.50    # documentation IP; replace with the device's address
    HW1_USER=admin                # device login username
    HW1_PASS=your-password        # device login password
    ```
    All three are required — without them the wrapper exits with a "must be set" error.
    (`hw1.sh` also honors `$HW1_ENV` or a legacy skill-local `.env`, but the host-only path is preferred.)
+
+   Prefer an explicit `https://` URL. Explicit `https://` and `http://` URLs stay
+   pinned to that scheme. A bare IP/host uses HTTPS; it can try HTTP after an HTTPS
+   connection refusal only with `HW1_ALLOW_HTTP=1` (or per-device `"allowHttp": true`
+   in the registry). For self-signed HTTPS, prefer `HW1_CACERT` / `"cacert"`;
+   `HW1_ALLOW_SELF_SIGNED=1` / `"allowSelfSigned": true` disables certificate
+   verification but does not permit HTTP.
 3. **Plugin** — deploy, wire, and restart the gateway in one step:
    ```bash
    bash plugin/deploy.sh
@@ -108,9 +115,10 @@ uncommitted. See [tools/README.md](tools/README.md).
 
 | Var | Meaning |
 |-----|---------|
-| `HW1_URL` | Device address. A bare IP/host (`192.0.2.42` in examples) auto-detects http vs https; a full URL pins the scheme. |
+| `HW1_URL` | Device address. Explicit `https://` and `http://` URLs are pinned. A bare IP/host uses HTTPS by default. |
 | `HW1_USER` / `HW1_PASS` | Device credentials. |
-| `HW1_INSECURE=1` or `HW1_CACERT=<path>` | Accept / pin a self-signed HTTPS cert (optional). |
+| `HW1_ALLOW_HTTP=1` | Permit a bare IP/host to try HTTP only after HTTPS connection refusal. Prefer an explicit `http://` URL for intentional plaintext HTTP. |
+| `HW1_ALLOW_SELF_SIGNED=1` or `HW1_CACERT=<path>` | Disable TLS verification on a trusted LAN, or verify with a host-side CA/certificate PEM (preferred). Neither setting permits HTTP. `HW1_INSECURE=1` remains a legacy alias. |
 | `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). |
 
 Credentials live only on the host and are never mounted into the sandbox.

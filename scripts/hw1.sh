@@ -7,8 +7,9 @@
 # or a legacy skill-local .env. Keep them OUTSIDE the skill dir — OpenClaw mirrors the skill
 # directory into the agent sandbox, so a .env inside it would expose HW1_USER/HW1_PASS.
 # Required:
-#   HW1_URL    device address — just the IP/host (e.g. 192.0.2.42 in documentation) and the wrapper auto-picks
-#              http or https, or a full URL (http://… / https://…) to pin the scheme.
+#   HW1_URL    device address — a full URL (http://… / https://…) pins the scheme.
+#              A bare IP/host uses HTTPS. Set HW1_ALLOW_HTTP=1 to permit a bare host
+#              to fall back to HTTP, and only when no HTTPS service accepts the connection.
 #   HW1_USER   device username
 #   HW1_PASS   device password
 #
@@ -20,11 +21,19 @@
 #   HW1_ALLOW_SELF_SIGNED=1  accept the device's self-signed TLS cert (curl -k) — trusted LAN only
 #                            (legacy alias: HW1_INSECURE=1)
 #   HW1_CACERT=/path.pem     verify TLS against this CA/cert (preferred over HW1_ALLOW_SELF_SIGNED)
+#   HW1_ALLOW_HTTP=1         for a bare host only, allow HTTP after HTTPS connection-refused
 #   HW1_AUTH_PROBE        auth-gated path used to verify login (default /api/system)
-#   HW1_COOKIE_DIR        session/scheme cache dir (default /tmp/hw1); the gateway sets
+#   HW1_COOKIE_DIR        session cache dir (default /tmp/hw1); the gateway sets
 #                         this per device so multiple devices don't share a session
 
 set -euo pipefail
+
+PING_BODY_FILE=""
+cleanup_ping_body() {
+    [[ -z "$PING_BODY_FILE" ]] || rm -f "$PING_BODY_FILE"
+}
+trap cleanup_ping_body EXIT
+trap 'exit 130' HUP INT TERM
 
 # Load credentials (see header). Prefer a host-only file outside the skill directory, so
 # credentials are never swept into OpenClaw's sandbox mirror of the skill dir.
@@ -44,7 +53,6 @@ CONNECT_TIMEOUT="${HW1_CONNECT_TIMEOUT:-5}"
 REQ_TIMEOUT="${HW1_TIMEOUT:-30}"
 LONG_TIMEOUT="${HW1_TIMEOUT_LONG:-300}"
 AUTH_PROBE="${HW1_AUTH_PROBE:-/api/system}"
-BASE_CACHE="$COOKIE_DIR/base_url"
 
 # --- Preflight ---
 if [[ -z "$URL" || -z "$USER" || -z "$PASS" ]]; then
@@ -63,8 +71,18 @@ if [[ ! -d "$COOKIE_DIR" ]]; then
     mkdir -p -m 700 "$COOKIE_DIR"
 fi
 
-# --- Shared curl options (timeouts + TLS), applied to EVERY request ---
-CURL_BASE=( -sS --connect-timeout "$CONNECT_TIMEOUT" )
+# --- Shared curl options (transport isolation + timeouts + TLS), applied to EVERY request ---
+# `-q` must be curl's first argument to prevent ~/.curlrc from changing security policy.
+# HardwareOne is reached directly by default: ambient proxy variables must not receive
+# device requests or credentials, and redirects must never select another endpoint.
+CURL_BASE=(
+    --noproxy '*'
+    --proto '=http,https'
+    --proto-redir '=http,https'
+    --max-redirs 0
+    -sS
+    --connect-timeout "$CONNECT_TIMEOUT"
+)
 if [[ -n "${HW1_CACERT:-}" ]]; then
     CURL_BASE+=( --cacert "${HW1_CACERT}" )
 elif [[ "${HW1_ALLOW_SELF_SIGNED:-${HW1_INSECURE:-0}}" == "1" ]]; then
@@ -75,7 +93,12 @@ fi
 # Usage: hw_curl <max_time_seconds> <curl args...>
 hw_curl() {
     local mt="$1"; shift
-    curl "${CURL_BASE[@]}" --max-time "$mt" "$@"
+    (
+        # Trust must come from the selected device policy or the system store, not
+        # unrelated gateway service environment inherited by this subprocess.
+        unset CURL_CA_BUNDLE SSL_CERT_FILE SSL_CERT_DIR SSLKEYLOGFILE
+        curl -q "${CURL_BASE[@]}" --max-time "$mt" "$@"
+    )
 }
 
 # Map a curl transport-error exit code to a clear, actionable message.
@@ -90,43 +113,128 @@ report_curl_failure() {
     esac
 }
 
-# --- Resolve the device base URL (auto http<->https on the same host) ---
-# HW1_URL may be a bare IP/host or a full URL. Probe the public /api/ping on each
-# candidate (cached -> configured scheme -> the other) and use the one that answers,
-# caching it. Only one scheme is ever up at a time, so the first responder is correct.
-resolve_base() {
-    local raw="$URL" host cfg cached
-    host="${raw#http://}"; host="${host#https://}"
-    case "$raw" in
-        https://*) cfg=https ;;
-        http://*)  cfg=http ;;
-        *)         cfg="" ;;
-    esac
-    [[ -f "$BASE_CACHE" ]] && cached="$(cat "$BASE_CACHE" 2>/dev/null)"
+# A public ping is the only response allowed to identify a HardwareOne endpoint shape
+# before login. It is not cryptographic device identity; that requires verified TLS or
+# an operator-pinned certificate/identity. Firmware v0.99.7+ emits this exact compact
+# field order, while redirects, captive portals, generic APIs, and restore mode do not.
+is_hardwareone_ping() {
+    local body_file="$1" content_type="$2" body_size newline_count
 
-    local order=() seen=" "
-    _add() { case "$seen" in *" $1 "*) ;; *) order+=("$1"); seen="$seen$1 " ;; esac; }
-    [[ -n "$cached" && "${cached#http*://}" == "$host" ]] && _add "$cached"
+    case "$content_type" in
+        application/json|application/json\;*) ;;
+        *) return 1 ;;
+    esac
+
+    body_size=$(wc -c < "$body_file")
+    body_size="${body_size//[[:space:]]/}"
+    [[ "$body_size" -gt 0 && "$body_size" -le 4096 ]] || return 1
+
+    # The firmware emits one compact JSON record with no trailing newline. Prevent
+    # grep from accepting a valid-looking line embedded in an otherwise invalid body.
+    newline_count=$(wc -l < "$body_file")
+    newline_count="${newline_count//[[:space:]]/}"
+    [[ "$newline_count" -eq 0 ]] || return 1
+
+    LC_ALL=C grep -Eq '^\{"ok":true,"hostname":"[A-Za-z0-9._-]+","mac":"([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}","fingerprint":"[0-9a-f]{64}","firmwareVersion":"[A-Za-z0-9._+-]+","acceptingRestore":(true|false),"pendingConfirm":(true|false)(,"https":(true|false))?\}$' "$body_file"
+}
+
+# Accept an origin authority only: hostname/IPv4/bracketed IPv6 plus optional port.
+# Paths, queries, fragments, userinfo, control characters, and ambiguous bare IPv6
+# are rejected so endpoint concatenation cannot change the intended origin.
+is_valid_authority() {
+    local authority="$1" port="" authority_re
+    authority_re='^(\[[0-9A-Fa-f:.]+(%25[A-Za-z0-9._~-]+)?\]|[A-Za-z0-9._-]+)(:([0-9]{1,5}))?$'
+    [[ "$authority" =~ $authority_re ]] || return 1
+    port="${BASH_REMATCH[4]:-}"
+    if [[ -n "$port" ]]; then
+        [[ "$port" != 0 && "$port" != 00 && "$port" != 000 && "$port" != 0000 && "$port" != 00000 ]] || return 1
+        (( 10#$port <= 65535 )) || return 1
+    fi
+}
+
+# --- Resolve the device base URL without an implicit security downgrade ---
+# An explicit URL pins its scheme. A bare host uses HTTPS; HW1_ALLOW_HTTP=1 permits
+# trying HTTP only after HTTPS was connection-refused (curl 7). A TLS/certificate
+# failure, timeout, redirect, non-200 response, or identity mismatch never downgrades.
+resolve_base() {
+    local raw="$URL" host cfg bare=0 allow_http=0
+    case "$raw" in
+        https://*) cfg=https; host="${raw#https://}" ;;
+        http://*)  cfg=http; host="${raw#http://}" ;;
+        *://*)
+            echo "Error: HW1_URL supports only http:// or https:// URLs." >&2
+            return 1 ;;
+        *) cfg=""; host="$raw"; bare=1 ;;
+    esac
+    if [[ -z "$host" ]]; then
+        echo "Error: HW1_URL has no host." >&2
+        return 1
+    fi
+    if ! is_valid_authority "$host"; then
+        echo "Error: HW1_URL must be an origin only: hostname/IP with optional port, and optional http:// or https:// scheme." >&2
+        return 1
+    fi
+    [[ "${HW1_ALLOW_HTTP:-0}" == "1" ]] && allow_http=1
+
     if [[ -n "$cfg" ]]; then
-        _add "$cfg://$host"
-        [[ "$cfg" == "http" ]] && _add "https://$host" || _add "http://$host"
+        local order=( "$cfg://$host" )
     else
-        _add "http://$host"; _add "https://$host"
+        local order=( "https://$host" )
+        [[ "$allow_http" -eq 1 ]] && order+=( "http://$host" )
     fi
 
-    local cand code rc last_rc=7
+    local cand body_file meta code content_type rc last_rc=7 endpoint_error=""
     for cand in "${order[@]}"; do
+        body_file=$(mktemp "$COOKIE_DIR/ping.XXXXXX")
+        PING_BODY_FILE="$body_file"
         rc=0
-        code=$(hw_curl "$REQ_TIMEOUT" -o /dev/null -w '%{http_code}' "$cand/api/ping") || rc=$?
-        if [[ "$rc" -eq 0 && -n "$code" && "$code" != "000" ]]; then
-            URL="$cand"
-            { printf '%s' "$cand" > "$BASE_CACHE"; chmod 600 "$BASE_CACHE"; } 2>/dev/null || true
-            return 0
+        meta=$(hw_curl "$REQ_TIMEOUT" --max-filesize 4096 -o "$body_file" \
+            -w $'%{http_code}\n%{content_type}' "$cand/api/ping") || rc=$?
+        code="${meta%%$'\n'*}"
+        if [[ "$meta" == *$'\n'* ]]; then
+            content_type="${meta#*$'\n'}"
+        else
+            content_type=""
         fi
-        last_rc="$rc"
+
+        if [[ "$rc" -ne 0 ]]; then
+            rm -f "$body_file"
+            PING_BODY_FILE=""
+            last_rc="$rc"
+            if [[ "$bare" -eq 1 && "$allow_http" -eq 1 && "$cand" == https://* && "$rc" -eq 7 ]]; then
+                continue
+            fi
+            break
+        fi
+        last_rc=0
+        if [[ "$code" != "200" ]]; then
+            endpoint_error="Error: '$cand/api/ping' returned HTTP ${code:-unknown}; refusing to send credentials."
+            rm -f "$body_file"
+            PING_BODY_FILE=""
+            break
+        fi
+        if ! is_hardwareone_ping "$body_file" "$content_type"; then
+            endpoint_error="Error: '$cand/api/ping' did not return a recognizable HardwareOne ping response; refusing to send credentials."
+            rm -f "$body_file"
+            PING_BODY_FILE=""
+            break
+        fi
+        rm -f "$body_file"
+        PING_BODY_FILE=""
+        URL="$cand"
+        return 0
     done
-    echo "Error: could not reach the device on http or https at '$host'." >&2
-    report_curl_failure "$last_rc"
+
+    if [[ -n "$endpoint_error" ]]; then
+        echo "$endpoint_error" >&2
+    else
+        if [[ "$bare" -eq 1 && "$allow_http" -eq 0 ]]; then
+            echo "Error: could not verify a HardwareOne HTTPS device at '$host' (plain HTTP is disabled; use an explicit http:// URL or set HW1_ALLOW_HTTP=1 only on a trusted LAN)." >&2
+        else
+            echo "Error: could not verify a HardwareOne device at '$host'." >&2
+        fi
+        report_curl_failure "$last_rc"
+    fi
     return 1
 }
 

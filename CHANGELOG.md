@@ -3,6 +3,22 @@
 Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+- Pin explicit `http://` and `https://` device URLs to their configured scheme. Bare
+  hosts now use HTTPS and can fall back to HTTP only after an HTTPS connection refusal
+  when `HW1_ALLOW_HTTP=1` / `allowHttp: true` is explicitly configured.
+- Reject redirects, non-200 responses, unexpected content types, oversized responses,
+  and non-HardwareOne `/api/ping` payloads before sending login credentials. TLS errors
+  and timeouts never authorize an HTTP downgrade.
+- Isolate device requests from user curl configuration and ambient proxy variables,
+  restrict curl to HTTP(S), and disable redirects.
+
+### Added
+- Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,
+  pre-login endpoint recognition, and curl isolation.
+
 ## [1.7.0] — 2026-08-03
 
 ### Added
