@@ -26,6 +26,9 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 ### Added
 - Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,
   pre-login endpoint recognition, and curl isolation.
+- An end-to-end test (`tests/hw1_e2e.test.js`) that runs the real wrapper and curl —
+  and the plugin on top — against a local mock of the firmware's routes and form
+  decoding. On macOS it also exercises `/bin/bash` 3.2 and the system curl.
 
 ### Fixed
 - Device logins URL-encode the username and password. The firmware url-decodes both
@@ -50,7 +53,9 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   defaults stop at 75 s because the firmware replies `[ERROR] Command timed out` after
   60 s and keeps running the command — the agent is now told not to re-run it. Mesh
   relays wait out the full budget (peers run relayed commands asynchronously), polling
-  less often on long waits. Per device: `timeout` / `timeoutMedium` / `timeoutLong`.
+  less often on long waits. Set the seconds per device (`timeout` / `timeoutMedium` /
+  `timeoutLong`) or gateway-wide (`HW1_TIMEOUT` / `HW1_TIMEOUT_MEDIUM` /
+  `HW1_TIMEOUT_LONG`); a value you set is used as given.
 - `HW1_TIMEOUT`, `HW1_TIMEOUT_MEDIUM`, `HW1_TIMEOUT_LONG` and `HW1_CONNECT_TIMEOUT` in
   `hardwareone.env` now take effect; the wrapper never read that file when the gateway
   supplied the connection, so they were silently ignored.
