@@ -3,6 +3,8 @@ import { after, test } from "node:test";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { COMMAND_SPEEDS, SPEED_SECONDS, commandSpeed } from "./command-speeds.js";
+import { commandTiming, relayWaitMs } from "./hardwareone-tool.js";
 
 const ORIGINAL_ENV = new Map(
   [
@@ -221,4 +223,147 @@ test("only configured devices resolve, even for Object.prototype names", async (
       assert.match(viaCamera.content[0].text, /^Error: unknown device/, `camera ${device}`);
     }
   }
+});
+
+test("commands are classified the way the firmware dispatches them", () => {
+  const cases = {
+    status: "fast",
+    "automation list": "fast",
+    ringscan: "fast",                        // only queues a scan
+    "llmask 1 2": "fast",                    // async; result via llmresult
+    "LLMLoad model.bin": "slow",             // case-insensitive
+    "llmgenerate what is 2+2": "slow",       // plain form generates synchronously
+    "llmgenerate json {\"q\":1}": "fast",    // subcommand overrides its parent
+    certgen: "fast",                         // default ECDSA takes ~1 s
+    "certgen   RSA": "slow",                 // whitespace and case normalized
+    sdformat: "fast",                        // bare form only warns
+    "sdformat confirm": "slow",
+    "wait 60000": "medium",
+    waitx: "fast",                           // prefixes match at word boundaries only
+    opencamera: "medium",
+    'espnowsendfile peer "/log.csv"': "slow",
+  };
+  for (const [command, speed] of Object.entries(cases)) {
+    assert.equal(commandSpeed(command), speed, command);
+  }
+  for (const [key, speed] of Object.entries(COMMAND_SPEEDS)) {
+    assert.ok(speed in SPEED_SECONDS, `${key} has a known speed`);
+    assert.equal(key, key.toLowerCase().trim(), `${key} is normalized`);
+  }
+});
+
+test("direct-device budgets stop at the firmware's synchronous wait unless set explicitly", () => {
+  const plain = { name: "a" };
+  assert.deepEqual(commandTiming(plain, ["status"]), { speed: "fast", commandS: 30, killAfterMs: 95_000 });
+  assert.equal(commandTiming(plain, ["opencamera"]).commandS, 75);   // medium, capped
+  assert.equal(commandTiming(plain, ["llmload m.bin"]).commandS, 75); // slow, capped
+  assert.equal(commandTiming(plain, ["--ping"]).commandS, null);      // not a CLI command
+  const tuned = { name: "b", timeout: 20, timeoutMedium: 90, timeoutLong: "200" };
+  assert.equal(commandTiming(tuned, ["status"]).commandS, 20);
+  assert.equal(commandTiming(tuned, ["opencamera"]).commandS, 90);
+  assert.equal(commandTiming(tuned, ["llmload m.bin"]).commandS, 200); // explicit wins over the cap
+  assert.equal(commandTiming(tuned, ["llmload m.bin"]).killAfterMs, (200 + 2 * 20 + 5) * 1000);
+  assert.equal(commandTiming({ name: "c", timeoutLong: "nonsense" }, ["llmload"]).commandS, 75);
+  // Relayed commands run asynchronously on the peer, so they get the full budget.
+  assert.equal(relayWaitMs("status"), 15_000);
+  assert.equal(relayWaitMs("opencamera"), 120_000);
+  assert.equal(relayWaitMs("llmload m.bin"), 300_000);
+});
+
+async function makeTimingWrapper(dir) {
+  const wrapper = join(dir, "fake-hw1-timing.sh");
+  await fs.writeFile(wrapper, [
+    "#!/bin/sh",
+    'printf "%s|%s|cmd=%s|req=%s\\n" "$HW1_URL" "$*" "${HW1_CMD_TIMEOUT-unset}" "${HW1_TIMEOUT-unset}" >> "$FAKE_HW1_LOG"',
+    'case "$*" in',
+    '  hang) exec sleep 30 ;;',
+    '  "llmload stuck") echo "[ERROR] Command timed out"; echo "Error: bad request (400)." >&2; exit 1 ;;',
+    '  espnowremote*) echo "OK: sent to peer-b (AA:BB:CC:DD:EE:FF) reqId 42"; exit 0 ;;',
+    "  \"espnowmessages json\"*) echo '{\"messages\":[{\"seq\":1,\"reqId\":42,\"type\":6,\"sent\":false,\"piece\":1,\"of\":1,\"msg\":\"hello from peer\"}]}'; exit 0 ;;",
+    "esac",
+    'echo "ran: $*"',
+    "",
+  ].join("\n"), { mode: 0o700 });
+  return wrapper;
+}
+
+test("each command's budget reaches the wrapper, and slow outcomes are explained", async (t) => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "hardwareone-plugin-timing-"));
+  const callLog = join(dir, "calls.log");
+  process.env.FAKE_HW1_LOG = callLog;
+  t.after(async () => {
+    delete process.env.FAKE_HW1_LOG;
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  const wrapper = await makeTimingWrapper(dir);
+  const registry = join(dir, "devices.json");
+  await fs.writeFile(registry, JSON.stringify({
+    default: "node-a",
+    devices: {
+      "node-a": { url: "https://node-a.test", user: "user", pass: "pass", role: "master" },
+      "node-b": { url: "https://node-b.test", user: "user", pass: "pass", timeout: 20, timeoutMedium: 90, timeoutLong: 200 },
+      "peer-b": { via: "mesh", user: "peer-user", pass: "peer-pass" },
+    },
+  }));
+  delete process.env.HW1_URL;
+  delete process.env.HW1_USER;
+  delete process.env.HW1_PASS;
+  const tools = await loadTools({ wrapper, registry, legacyEnv: join(dir, "missing.env") });
+  const cli = tools.find((tool) => tool.name === "hardwareone_cli");
+  const lastCall = async () => (await fs.readFile(callLog, "utf8")).trim().split("\n").pop();
+
+  for (const [params, expected] of [
+    [{ command: "status" }, "https://node-a.test|status|cmd=30|req=unset"],
+    [{ command: "certgen rsa" }, "https://node-a.test|certgen rsa|cmd=75|req=unset"],
+    [{ command: "status", device: "node-b" }, "https://node-b.test|status|cmd=20|req=20"],
+    [{ command: "opencamera", device: "node-b" }, "https://node-b.test|opencamera|cmd=90|req=20"],
+    [{ command: "llmload m.bin", device: "node-b" }, "https://node-b.test|llmload m.bin|cmd=200|req=20"],
+  ]) {
+    await cli.execute("test-call", params);
+    assert.equal(await lastCall(), expected);
+  }
+  await pingTool(tools).execute("test-call", {});
+  assert.equal(await lastCall(), "https://node-a.test|--ping|cmd=unset|req=unset");
+
+  // The firmware's own 60 s reply means the command is still running on the device.
+  const stuck = await cli.execute("test-call", { command: "llmload stuck" });
+  assert.match(stuck.content[0].text, /\[ERROR\] Command timed out/);
+  assert.match(stuck.content[0].text, /keeps running it in the background\. Don't run it again/);
+
+  // Mesh relay: dispatch, then poll for the peer's reply.
+  const relayed = await cli.execute("test-call", { command: "status", device: "peer-b" });
+  assert.equal(relayed.content[0].text, "[via node-a → peer-b] hello from peer");
+
+  // Cancellation stops the wrapper instead of waiting out its budget.
+  const controller = new AbortController();
+  const started = Date.now();
+  const pending = cli.execute("test-call", { command: "hang" }, controller.signal);
+  setTimeout(() => controller.abort(), 100);
+  assert.match((await pending).content[0].text, /^Error: cancelled/);
+  assert.ok(Date.now() - started < 5_000, "cancelled promptly");
+});
+
+test("legacy hardwareone.env timing settings reach the wrapper", async (t) => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "hardwareone-plugin-legacy-timing-"));
+  const callLog = join(dir, "calls.log");
+  process.env.FAKE_HW1_LOG = callLog;
+  t.after(async () => {
+    delete process.env.FAKE_HW1_LOG;
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  const wrapper = await makeTimingWrapper(dir);
+  const legacyEnv = join(dir, "hardwareone.env");
+  await fs.writeFile(legacyEnv,
+    "HW1_URL=legacy.test\nHW1_USER=user\nHW1_PASS=pass\nHW1_TIMEOUT=12\nHW1_TIMEOUT_LONG=150\n");
+  delete process.env.HW1_URL;
+  delete process.env.HW1_USER;
+  delete process.env.HW1_PASS;
+  const tools = await loadTools({ wrapper, registry: join(dir, "missing.json"), legacyEnv });
+  const cli = tools.find((tool) => tool.name === "hardwareone_cli");
+  await cli.execute("test-call", { command: "status" });
+  await cli.execute("test-call", { command: "llmload m.bin" });
+  assert.deepEqual((await fs.readFile(callLog, "utf8")).trim().split("\n"), [
+    "legacy.test|status|cmd=12|req=12",
+    "legacy.test|llmload m.bin|cmd=150|req=12",
+  ]);
 });

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SPEED_SECONDS, commandSpeed } from "./command-speeds.js";
 
 // Host-side wrapper the tools shell out to. Defaults to the standard skill location
 // under the gateway user's home; set HW1_SCRIPT to override if your skill lives elsewhere.
@@ -15,13 +16,20 @@ const HW1_DEVICES_FILE =
   process.env.HW1_DEVICES_FILE || `${process.env.HOME}/.openclaw/hardwareone.devices.json`;
 const HW1_ENV = process.env.HW1_ENV || `${process.env.HOME}/.openclaw/hardwareone.env`;
 
-const TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
-const RELAY_TIMEOUT_MS = 15_000;      // how long to poll for a mesh peer's async reply
-const RELAY_POLL_INTERVAL_MS = 800;   // gap between espnowmessages polls
+const RELAY_TIMEOUT_MS = 15_000;      // how long to poll for a mesh peer's reply to a fast command
+const RELAY_POLL_INTERVAL_MS = 800;   // gap between espnowmessages polls (backs off on long waits)
 const MSG_CMD_RESULT = 6;             // espnowmessages `type` value for a remote-command result
 const IMAGE_MAX_B64_BYTES = 8 * 1024 * 1024; // base64 of a device image (frames are small; cap generously)
-const CAMERA_WARMUP_MS = 90_000;      // `opencamera` can block while the sensor powers up (~60s max)
+
+// HardwareOne answers a synchronous web command within 60 s: after that it replies
+// "[ERROR] Command timed out" and keeps running the command in the background
+// (firmware submitAndExecuteSync). Waiting longer on a direct device only delays
+// noticing a hung one, so default budgets stop there; the extra seconds cover the
+// firmware's 2 s queue wait and the network. An explicit per-device value still wins.
+const DEVICE_SYNC_WAIT_S = 60;
+const DIRECT_WAIT_CAP_S = DEVICE_SYNC_WAIT_S + 15;
+const DEVICE_SYNC_TIMEOUT_RE = /\[ERROR\] Command timed out/;
 
 const SAFE_CLI_RE = /^[\x20-\x7E]+$/;
 const SAFE_DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -98,6 +106,7 @@ function normalizeDevice(name, raw, defaults) {
     cacert: m.cacert ? String(m.cacert) : "",
     connectTimeout: m.connectTimeout,
     timeout: m.timeout,
+    timeoutMedium: m.timeoutMedium,
     timeoutLong: m.timeoutLong,
     authProbe: m.authProbe,
     description: cleanDescription(m.description),
@@ -177,6 +186,12 @@ async function readLegacyDevice(warnings) {
     allowHttp: truthy(get("HW1_ALLOW_HTTP")),
     allowSelfSigned: truthy(get("HW1_ALLOW_SELF_SIGNED")) || truthy(get("HW1_INSECURE")),
     cacert: get("HW1_CACERT") || "",
+    // hw1.sh never sources this file when the gateway passes the connection, so the
+    // gateway must carry the documented timing settings itself.
+    connectTimeout: get("HW1_CONNECT_TIMEOUT"),
+    timeout: get("HW1_TIMEOUT"),
+    timeoutMedium: get("HW1_TIMEOUT_MEDIUM"),
+    timeoutLong: get("HW1_TIMEOUT_LONG"),
   };
 }
 
@@ -235,9 +250,42 @@ function cookieDirFor(name) {
   return `/tmp/hw1/${String(name).replace(/[^A-Za-z0-9_-]/g, "_")}`;
 }
 
+function positiveSeconds(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// How long one hw1.sh run may take. `commandS` is the budget for the command's own
+// response (hw1.sh's HW1_CMD_TIMEOUT); `killAfterMs` also covers the endpoint check
+// and login that precede it, as a backstop for a wrapper that stops responding.
+export function commandTiming(device, argv) {
+  const requestS = positiveSeconds(device.timeout) || SPEED_SECONDS.fast;
+  const isCommand = argv.length === 1 && !argv[0].startsWith("--");
+  const speed = isCommand ? commandSpeed(argv[0]) : "fast";
+  const explicit = positiveSeconds(
+    { fast: device.timeout, medium: device.timeoutMedium, slow: device.timeoutLong }[speed]);
+  const commandS = Math.ceil(explicit || Math.min(SPEED_SECONDS[speed], DIRECT_WAIT_CAP_S));
+  return { speed, commandS: isCommand ? commandS : null, killAfterMs: (commandS + 2 * requestS + 5) * 1000 };
+}
+
+// A relayed command runs asynchronously on the peer, with no 60 s cap, so the relay
+// waits out the full budget for medium/slow commands. Fast commands keep the short wait.
+export function relayWaitMs(command) {
+  const speed = commandSpeed(command);
+  return speed === "fast" ? RELAY_TIMEOUT_MS : SPEED_SECONDS[speed] * 1000;
+}
+
+// OpenClaw passes an AbortSignal as a tool's third argument where supported (the run
+// was stopped or timed out); anything else is ignored.
+function abortSignal(v) {
+  return v && typeof v.addEventListener === "function" && typeof v.aborted === "boolean" ? v : null;
+}
+
 function runHw1(device, argv, opts = {}) {
-  const timeoutMs = opts.timeoutMs || TIMEOUT_MS;
+  const { commandS, killAfterMs } = commandTiming(device, argv);
   const maxBytes = opts.maxBytes || MAX_OUTPUT_BYTES;
+  const signal = abortSignal(opts.signal);
   const env = {
     ...process.env,
     HW1_URL: device.url,
@@ -251,18 +299,29 @@ function runHw1(device, argv, opts = {}) {
   if (device.cacert) env.HW1_CACERT = device.cacert; else delete env.HW1_CACERT;
   if (device.connectTimeout != null) env.HW1_CONNECT_TIMEOUT = String(device.connectTimeout);
   if (device.timeout != null) env.HW1_TIMEOUT = String(device.timeout);
-  if (device.timeoutLong != null) env.HW1_TIMEOUT_LONG = String(device.timeoutLong);
+  if (commandS != null) env.HW1_CMD_TIMEOUT = String(commandS); else delete env.HW1_CMD_TIMEOUT;
   if (device.authProbe) env.HW1_AUTH_PROBE = String(device.authProbe);
 
   return new Promise((resolvePromise, rejectPromise) => {
+    if (signal && signal.aborted) { rejectPromise(new Error("cancelled")); return; }
     const proc = spawn(HW1_SCRIPT, argv, { stdio: ["ignore", "pipe", "pipe"], env });
     let stdout = "";
     let stderr = "";
     let truncated = false;
-    const timer = setTimeout(() => {
-      try { proc.kill("SIGKILL"); } catch {}
-      rejectPromise(new Error(`hardwareone timeout after ${timeoutMs}ms`));
-    }, timeoutMs);
+    const stop = (err) => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", onAbort);
+      if (err) {
+        try { proc.kill("SIGKILL"); } catch {}
+        rejectPromise(err);
+      }
+    };
+    const timer = setTimeout(() => stop(new Error(
+      `no response from '${device.name}' within ${Math.round(killAfterMs / 1000)}s — the command ` +
+      "may still be running on the device, or may have finished; check its state before running it again")),
+    killAfterMs);
+    const onAbort = () => stop(new Error("cancelled"));
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
     proc.stdout.on("data", (chunk) => {
       if (stdout.length + chunk.length > maxBytes) {
         stdout += chunk.slice(0, maxBytes - stdout.length).toString();
@@ -275,9 +334,9 @@ function runHw1(device, argv, opts = {}) {
     proc.stderr.on("data", (chunk) => {
       if (stderr.length < 4096) stderr += chunk.toString().slice(0, 4096 - stderr.length);
     });
-    proc.on("error", (err) => { clearTimeout(timer); rejectPromise(err); });
+    proc.on("error", (err) => stop(err));
     proc.on("close", (code) => {
-      clearTimeout(timer);
+      stop();
       resolvePromise({ exitCode: code, stdout, stderr, truncated });
     });
   });
@@ -289,7 +348,17 @@ function wasNotSent(res) {
   return res.exitCode === EXIT_NOT_SENT;
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Resolves early when `signal` aborts, so a cancelled relay stops polling promptly.
+const sleep = (ms, signal) => new Promise((resolve) => {
+  if (signal && signal.aborted) { resolve(); return; }
+  const done = () => {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", done);
+    resolve();
+  };
+  const timer = setTimeout(done, ms);
+  if (signal) signal.addEventListener("abort", done, { once: true });
+});
 
 // Pull the JSON object out of a CLI response (which may carry a `[CMD] …-> OK` line
 // before or after the payload).
@@ -312,16 +381,23 @@ function relayMaster(registry) {
 
 // Poll the master's message buffer for one espnowremote reply. Walks forward by seq
 // (each message seen once), reassembling fragments in piece order once all `of` arrive.
-async function pollMeshResult(master, mac, reqId) {
-  const deadline = Date.now() + RELAY_TIMEOUT_MS;
+// Each poll is a full request to the master, so long waits back off to spare it.
+async function pollMeshResult(master, mac, reqId, waitMs, signal) {
+  const started = Date.now();
+  const deadline = started + waitMs;
+  const pollGap = () => {
+    const elapsed = Date.now() - started;
+    return elapsed < 15_000 ? RELAY_POLL_INTERVAL_MS : elapsed < 60_000 ? 2_000 : 5_000;
+  };
   const pieces = new Map(); // piece (1-based) -> text
   let total = null;
   let cursor = 0;
   const macArg = mac ? ` ${mac}` : "";
   while (Date.now() < deadline) {
+    if (signal && signal.aborted) return { cancelled: true };
     let page;
-    try { page = await runHw1(master, [`espnowmessages json ${cursor}${macArg}`]); }
-    catch { await sleep(RELAY_POLL_INTERVAL_MS); continue; }
+    try { page = await runHw1(master, [`espnowmessages json ${cursor}${macArg}`], { signal }); }
+    catch { await sleep(pollGap(), signal); continue; }
     const parsed = extractJson(page.stdout || "");
     const msgs = parsed && Array.isArray(parsed.messages) ? parsed.messages : [];
     let advanced = false;
@@ -340,20 +416,21 @@ async function pollMeshResult(master, mac, reqId) {
     // a full page may mean more already-buffered messages above the cursor — keep paging;
     // otherwise we've caught up, so wait before checking for new arrivals.
     if (msgs.length >= 8 && advanced) continue;
-    await sleep(RELAY_POLL_INTERVAL_MS);
+    await sleep(pollGap(), signal);
   }
+  if (signal && signal.aborted) return { cancelled: true };
   return { timedOut: true };
 }
 
 // Relay one CLI command to a mesh peer and return its reply (or a clean timeout/error).
-async function relayMeshCommand(registry, peer, command) {
+async function relayMeshCommand(registry, peer, command, signal) {
   const master = relayMaster(registry);
   if (!master) return errorResult(`cannot reach mesh device '${peer.name}': no direct master is configured to relay through`);
   if (/\s/.test(peer.user) || /\s/.test(peer.pass)) {
     return errorResult(`mesh device '${peer.name}' has whitespace in its credentials; espnowremote can't pass those — set space-free user/pass in the registry`);
   }
   let res;
-  try { res = await runHw1(master, [`espnowremote ${peer.name} ${peer.user} ${peer.pass} ${command}`]); }
+  try { res = await runHw1(master, [`espnowremote ${peer.name} ${peer.user} ${peer.pass} ${command}`], { signal }); }
   catch (err) { return errorResult(`relay to '${peer.name}' via '${master.name}' failed: ${String(err && err.message ? err.message : err)}`); }
   const out = ((res.stdout || "") + (res.stderr || "")).trim();
   const tag = `[via ${master.name} → ${peer.name}] `;
@@ -364,19 +441,24 @@ async function relayMeshCommand(registry, peer, command) {
   }
   const reqId = Number(reqIdMatch[1]);
   const macMatch = out.match(/\b([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})\b/);
-  const result = await pollMeshResult(master, macMatch ? macMatch[1] : "", reqId);
+  const waitMs = relayWaitMs(command);
+  const result = await pollMeshResult(master, macMatch ? macMatch[1] : "", reqId, waitMs, signal);
+  if (result.cancelled) return errorResult(`cancelled while waiting for '${peer.name}' — the command was delivered and may still run`);
   if (result.timedOut) {
-    return { content: [{ type: "text", text: tag + `delivered, but no reply within ${RELAY_TIMEOUT_MS / 1000}s — the peer may be offline, out of range, or the command produced no output.` }], details: { device: peer.name, via: "mesh", relay: master.name, timedOut: true } };
+    const why = waitMs > RELAY_TIMEOUT_MS
+      ? "the command may still be running on the peer, or the peer went offline; check its state before running it again."
+      : "the peer may be offline, out of range, or the command produced no output.";
+    return { content: [{ type: "text", text: tag + `delivered, but no reply within ${waitMs / 1000}s — ${why}` }], details: { device: peer.name, via: "mesh", relay: master.name, timedOut: true } };
   }
   return { content: [{ type: "text", text: tag + result.text }], details: { device: peer.name, via: "mesh", relay: master.name, reqId } };
 }
 
 // "Ping" a mesh peer = the synchronous ESP-NOW reachability probe, run on the master.
-async function relayMeshProbe(registry, peer) {
+async function relayMeshProbe(registry, peer, signal) {
   const master = relayMaster(registry);
   if (!master) return errorResult(`cannot reach mesh device '${peer.name}': no direct master to relay through`);
   try {
-    const r = await runHw1(master, [`espnowprobe ${peer.name}`]);
+    const r = await runHw1(master, [`espnowprobe ${peer.name}`], { signal });
     const out = ((r.stdout || "") + (r.stderr || "")).trim() || "(no output)";
     return { content: [{ type: "text", text: `[via ${master.name} → ${peer.name}] ${out}` }], details: { device: peer.name, via: "mesh", relay: master.name } };
   } catch (err) { return errorResult(String(err && err.message ? err.message : err)); }
@@ -387,7 +469,7 @@ async function relayMeshProbe(registry, peer) {
 // named device is never failed over.
 // A mesh-only device has no direct HTTP — its commands are relayed through the master via
 // espnowremote (creds injected host-side; the async reply is polled back).
-async function runOnDevice(requestedDevice, argv) {
+async function runOnDevice(requestedDevice, argv, signal) {
   const registry = await buildRegistry();
   if (Object.keys(registry.devices).length === 0) {
     const why = registry.warnings.length ? " — " + registry.warnings.join("; ") : "";
@@ -402,8 +484,8 @@ async function runOnDevice(requestedDevice, argv) {
     }
     if (device.via === "mesh") {
       // mesh peer: relay through the master (creds injected host-side; async reply polled back)
-      if (argv.length === 1 && argv[0] === "--ping") return relayMeshProbe(registry, device);
-      if (argv.length === 1 && !argv[0].startsWith("--")) return relayMeshCommand(registry, device, argv[0]);
+      if (argv.length === 1 && argv[0] === "--ping") return relayMeshProbe(registry, device, signal);
+      if (argv.length === 1 && !argv[0].startsWith("--")) return relayMeshCommand(registry, device, argv[0], signal);
       return errorResult(`'${requestedDevice}' is a mesh device — only CLI commands can be relayed to it`);
     }
   } else {
@@ -415,14 +497,14 @@ async function runOnDevice(requestedDevice, argv) {
   }
 
   let res;
-  try { res = await runHw1(device, argv); }
+  try { res = await runHw1(device, argv, { signal }); }
   catch (err) { return errorResult(String(err && err.message ? err.message : err)); }
 
   if (allowFailover && wasNotSent(res)) {
     const bname = backupName(registry);
     if (bname && bname !== device.name) {
       try {
-        const r2 = await runHw1(registry.devices[bname], argv);
+        const r2 = await runHw1(registry.devices[bname], argv, { signal });
         return formatResult(r2, { device: bname, failedOverFrom: device.name });
       } catch { /* fall through and report the original failure */ }
     }
@@ -438,8 +520,12 @@ function formatResult(res, meta = {}) {
   const fo = meta.failedOverFrom
     ? `[failed over ${meta.failedOverFrom} → ${meta.device}: '${meta.failedOverFrom}' was unreachable, so the command was not sent to it]\n`
     : "";
+  const stillRunning = DEVICE_SYNC_TIMEOUT_RE.test(body)
+    ? `\n\n[note] The device stops waiting for a command after ${DEVICE_SYNC_WAIT_S} s but keeps running it ` +
+      "in the background. Don't run it again; check its status or result first."
+    : "";
   return {
-    content: [{ type: "text", text: fo + prefix + body + suffix }],
+    content: [{ type: "text", text: fo + prefix + body + suffix + stillRunning }],
     details: {
       device: meta.device,
       failedOverFrom: meta.failedOverFrom,
@@ -468,9 +554,9 @@ const DEVICE_PARAM = {
 // stdout (one line, unwrapped) plus an `HTTP <code> <content-type>` line to stderr. Only
 // DIRECT HTTP(S) devices can serve binary — a mesh peer has no HTTP, so image tools reject
 // it. The 64KB text cap is raised for this path (a JPEG frame's base64 can exceed it).
-async function runHw1Image(device, path) {
+async function runHw1Image(device, path, signal) {
   let res;
-  try { res = await runHw1(device, ["--get-b64", path], { maxBytes: IMAGE_MAX_B64_BYTES }); }
+  try { res = await runHw1(device, ["--get-b64", path], { maxBytes: IMAGE_MAX_B64_BYTES, signal }); }
   catch (err) { return { error: String(err && err.message ? err.message : err) }; }
   const line = ((res.stderr || "").match(/HTTP\s+(\d{3})\s*(\S*)/g) || []).pop();
   const mm = line ? line.match(/HTTP\s+(\d{3})\s*(\S*)/) : null;
@@ -579,10 +665,10 @@ export function createHardwareoneTools(api) {
         "Health-check a HardwareOne device — the default device, or the one named by `device`. " +
         "Returns hostname, MAC, firmware version.",
       parameters: { type: "object", properties: { device: DEVICE_PARAM }, required: [] },
-      async execute(_toolCallId, params) {
+      async execute(_toolCallId, params, signal) {
         const device = params && params.device;
         if (!validDeviceParam(device)) return errorResult("device must be a short name (letters, digits, _ or -)");
-        return runOnDevice(device, ["--ping"]);
+        return runOnDevice(device, ["--ping"], signal);
       },
     },
     {
@@ -604,7 +690,7 @@ export function createHardwareoneTools(api) {
         },
         required: ["command"],
       },
-      async execute(_toolCallId, params) {
+      async execute(_toolCallId, params, signal) {
         const command = params && params.command;
         const device = params && params.device;
         if (typeof command !== "string" || command.length === 0 || command.length > 512) {
@@ -614,7 +700,7 @@ export function createHardwareoneTools(api) {
           return errorResult("command must be printable text (no control characters)");
         }
         if (!validDeviceParam(device)) return errorResult("device must be a short name (letters, digits, _ or -)");
-        return runOnDevice(device, [command]);
+        return runOnDevice(device, [command], signal);
       },
     },
     {
@@ -631,7 +717,7 @@ export function createHardwareoneTools(api) {
         properties: { probe: { type: "boolean", description: "Also ping each direct device to report online status (slower)." } },
         required: [],
       },
-      async execute(_toolCallId, params) {
+      async execute(_toolCallId, params, signal) {
         const registry = await buildRegistry();
         const names = Object.keys(registry.devices);
         if (names.length === 0) {
@@ -653,7 +739,7 @@ export function createHardwareoneTools(api) {
           devices = await Promise.all(devices.map(async (d) => {
             if (d.access === "mesh") return d; // can't HTTP-ping a mesh-only device
             try {
-              const res = await runHw1(registry.devices[d.name], ["--ping"]);
+              const res = await runHw1(registry.devices[d.name], ["--ping"], { signal });
               return { ...d, online: res.exitCode === 0 };
             } catch {
               return { ...d, online: false };
@@ -686,7 +772,7 @@ export function createHardwareoneTools(api) {
         },
         required: [],
       },
-      async execute(_toolCallId, params) {
+      async execute(_toolCallId, params, signal) {
         const requested = params && params.device;
         const ensureOn = !params || params.ensureOn === undefined ? true : truthy(params.ensureOn);
         const describe = !params || params.describe === undefined ? true : truthy(params.describe);
@@ -697,14 +783,15 @@ export function createHardwareoneTools(api) {
         if (resolved.error) return errorResult(resolved.error);
         const device = resolved.device;
 
-        let img = await runHw1Image(device, "/api/sensors/camera/frame");
+        let img = await runHw1Image(device, "/api/sensors/camera/frame", signal);
         if (img.error) return errorResult(img.error);
         if (img.code === 501) return errorResult(`'${device.name}' has no camera (its firmware wasn't built with the camera feature).`);
         if (img.code === 503 && ensureOn) {
-          // camera is off — start it (opencamera can block while the sensor powers up), then retry once.
-          try { await runHw1(device, ["opencamera"], { timeoutMs: CAMERA_WARMUP_MS }); }
+          // camera is off — start it (opencamera is a medium-speed command: the sensor
+          // power-up can block), then retry once.
+          try { await runHw1(device, ["opencamera"], { signal }); }
           catch (err) { return errorResult(`could not start the camera on '${device.name}': ${String(err && err.message ? err.message : err)}`); }
-          img = await runHw1Image(device, "/api/sensors/camera/frame");
+          img = await runHw1Image(device, "/api/sensors/camera/frame", signal);
           if (img.error) return errorResult(img.error);
         }
         if (img.code === 503) return errorResult(`the camera on '${device.name}' is not started — retry with ensureOn:true, or run 'opencamera' via hardwareone_cli first.`);

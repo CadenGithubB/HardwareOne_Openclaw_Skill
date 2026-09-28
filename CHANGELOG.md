@@ -41,6 +41,21 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   `7` only when no command request left the host — the device was unreachable or
   unverified, or the login failed in transit — and the gateway fails over on that exit
   status alone. Failures after dispatch say the command may still be running.
+- Slow commands are no longer killed after 30 s. The gateway killed every
+  `hardwareone_cli` call at 30 s, so the wrapper's 300 s allowance for `llmload`,
+  `llmgenerate`, `opencamera` and `certgen` never took effect. Commands are now classed
+  **fast / medium / slow** in `plugin/command-speeds.js` (30 / 120 / 300 s), matched the
+  way the firmware dispatches them, and the gateway passes each command's budget to
+  `hw1.sh` as `HW1_CMD_TIMEOUT` (the wrapper's own command list is gone). Direct-device
+  defaults stop at 75 s because the firmware replies `[ERROR] Command timed out` after
+  60 s and keeps running the command — the agent is now told not to re-run it. Mesh
+  relays wait out the full budget (peers run relayed commands asynchronously), polling
+  less often on long waits. Per device: `timeout` / `timeoutMedium` / `timeoutLong`.
+- `HW1_TIMEOUT`, `HW1_TIMEOUT_MEDIUM`, `HW1_TIMEOUT_LONG` and `HW1_CONNECT_TIMEOUT` in
+  `hardwareone.env` now take effect; the wrapper never read that file when the gateway
+  supplied the connection, so they were silently ignored.
+- A tool call cancelled by OpenClaw stops its wrapper (and any mesh-relay polling)
+  instead of running on until its timeout.
 
 ## [1.7.0] — 2026-08-03
 

@@ -31,7 +31,9 @@
     "For self-signed HTTPS, prefer cacert:'/host/path/device-ca.pem' (the device cert SAN must match the URL).",
     "allowSelfSigned:true disables certificate verification and is a trusted-LAN-only alternative.",
     "allowHttp and allowSelfSigned are separate: neither one implies or enables the other.",
-    "Advanced optional per-device fields: connectTimeout, timeout, timeoutLong, authProbe (seconds / path).",
+    "Advanced optional per-device fields: connectTimeout, timeout, timeoutMedium, timeoutLong, authProbe (seconds / path).",
+    "timeout also caps each login request; timeout/timeoutMedium/timeoutLong are the budgets for fast/medium/slow",
+    "commands as classed in plugin/command-speeds.js (unset: 30 s / 75 s / 75 s on a direct device).",
     "Lines in this _help array are ignored by the parser - delete them or keep them, your choice."
   ],
   "default": "node-a",

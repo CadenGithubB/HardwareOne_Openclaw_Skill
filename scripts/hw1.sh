@@ -16,8 +16,10 @@
 # Optional:
 #   HW1_CONNECT_TIMEOUT   TCP connect timeout, seconds (default 5) — fail fast if offline
 #   HW1_TIMEOUT           per-request cap, seconds (default 30; covers ~12s password hashing)
-#   HW1_TIMEOUT_LONG      cap for slow commands: model operations, camera startup,
-#                         and certificate generation (default 300)
+#   HW1_CMD_TIMEOUT       cap for the CLI command's own request, whole seconds (default
+#                         HW1_TIMEOUT). The gateway sets it per command from its speed table
+#                         (plugin/command-speeds.js); set it yourself to run a slow command
+#                         by hand. The device itself stops waiting after 60 s.
 #   HW1_ALLOW_SELF_SIGNED=1  accept the device's self-signed TLS cert (curl -k) — trusted LAN only
 #                            (legacy alias: HW1_INSECURE=1)
 #   HW1_CACERT=/path.pem     verify TLS against this CA/cert (preferred over HW1_ALLOW_SELF_SIGNED)
@@ -51,7 +53,10 @@ COOKIE_FILE="$COOKIE_DIR/session.cookie"
 
 CONNECT_TIMEOUT="${HW1_CONNECT_TIMEOUT:-5}"
 REQ_TIMEOUT="${HW1_TIMEOUT:-30}"
-LONG_TIMEOUT="${HW1_TIMEOUT_LONG:-300}"
+CMD_TIMEOUT="${HW1_CMD_TIMEOUT:-$REQ_TIMEOUT}"
+_positive_int_re='^[1-9][0-9]*$'
+# curl treats --max-time 0 as "no limit", so anything but a positive integer falls back.
+[[ "$CMD_TIMEOUT" =~ $_positive_int_re ]] || CMD_TIMEOUT="$REQ_TIMEOUT"
 AUTH_PROBE="${HW1_AUTH_PROBE:-/api/system}"
 
 # --- Preflight ---
@@ -366,13 +371,7 @@ do_get_b64() {
 # --- CLI command execution ---
 do_cli() {
     local cmd="$1"
-    local first="${cmd%% *}"
-    local mt="$REQ_TIMEOUT"
-    case "$first" in
-        llmgenerate|llmload) mt="$LONG_TIMEOUT" ;;  # model ops can run for minutes
-        opencamera|camerastart) mt="$LONG_TIMEOUT" ;;  # camera power-up can block while the sensor warms up
-        certgen) mt="$LONG_TIMEOUT" ;;  # RSA-2048 certificate generation is documented as ~30-60s
-    esac
+    local mt="$CMD_TIMEOUT"
 
     local attempt=0 max_attempts=2
     while [[ $attempt -lt $max_attempts ]]; do

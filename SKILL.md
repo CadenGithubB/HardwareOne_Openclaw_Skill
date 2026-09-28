@@ -152,6 +152,7 @@ When unsure about a bond, read **`bondstatus`** — it's the single source of tr
 | `"Admin access required"` | Stop and report that the configured account lacks admin privilege. |
 | `"Super-admin access required"` | Stop and report the stronger requirement; ordinary admin is intentionally insufficient. |
 | Exit code 0 but no output | Report to the user; do not fabricate content. |
+| `"[ERROR] Command timed out"`, or "no response … after the command was sent" | The command may still be running on the device — it keeps going after the device or gateway stops waiting. Do **not** re-run it; check its status or result first. |
 | `"must be printable text"` | Your argument contained a control character (newline/tab) — remove it and retry. |
 | 401 / 403 / "authentication failed" | Credentials are **host-side and invisible to you** — you can't see or change them. Do NOT read `.env`, search the filesystem, or retry (repeated logins **lock the device**). Stop and report the auth failure to the user. |
 

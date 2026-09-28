@@ -17,6 +17,7 @@ block, so the agent can answer even when its model transport does not forward to
 | `openclaw.plugin.json` | Plugin manifest — must include `contracts.tools` or it's filtered out at discovery. |
 | `index.js` | Entry: imports `definePluginEntry` from the OpenClaw core and registers the tools. |
 | `hardwareone-tool.js` | The tool definitions + subprocess plumbing + input validation. |
+| `command-speeds.js` | The fast / medium / slow class of each command, which sets how long the gateway waits for it. |
 | `deploy.sh` | Installs/restores the plugin and restarts the gateway. |
 
 ## Deploy / restore
@@ -46,7 +47,8 @@ no longer wipe it. Re-run `deploy.sh` whenever the HardwareOne plugin changes.
 
 - **Input:** each tool validates length (≤ 512 chars), rejects control characters, and restricts device names to a safe charset.
 - **Process:** `spawn` with an argv array — never a shell, no `sh -c`. Command arguments can't be shell-interpreted on the host.
-- **Runtime:** per-call timeout; stdout capped at 64 KB, stderr at 4 KB.
+- **Runtime:** each command gets its speed class's time budget (`command-speeds.js`); a
+  cancelled tool call stops its wrapper; stdout capped at 64 KB, stderr at 4 KB.
 - **Credentials:** live only in the host-side environment/registry outside the skill directory; they never enter the sandbox.
 
 ## Gotchas

@@ -119,9 +119,27 @@ uncommitted. See [tools/README.md](tools/README.md).
 | `HW1_USER` / `HW1_PASS` | Device credentials. |
 | `HW1_ALLOW_HTTP=1` | Permit a bare IP/host to try HTTP only after HTTPS connection refusal. Prefer an explicit `http://` URL for intentional plaintext HTTP. |
 | `HW1_ALLOW_SELF_SIGNED=1` or `HW1_CACERT=<path>` | Disable TLS verification on a trusted LAN, or verify with a host-side CA/certificate PEM (preferred). Neither setting permits HTTP. `HW1_INSECURE=1` remains a legacy alias. |
-| `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). |
+| `HW1_CONNECT_TIMEOUT` | TCP connect timeout in seconds (optional, default 5). |
+| `HW1_TIMEOUT`, `HW1_TIMEOUT_MEDIUM`, `HW1_TIMEOUT_LONG` | Budgets in seconds for fast, medium, and slow commands (optional; see below). `HW1_TIMEOUT` also caps each login/endpoint-check request. |
 
 Credentials live only on the host and are never mounted into the sandbox.
+
+### Command speeds
+
+Each command is classed **fast** (default, 30 s), **medium** (120 s) or **slow**
+(300 s) in [`plugin/command-speeds.js`](plugin/command-speeds.js) — e.g. `opencamera`
+is medium, `llmload` and `certgen rsa` are slow. Commands match the way the firmware
+dispatches them (case-insensitive, longest prefix), so a subcommand can differ from
+its parent (`llmgenerate json` only starts async work, so it is fast).
+
+- **Direct devices:** the firmware stops waiting for a web command after 60 s and
+  replies `[ERROR] Command timed out` while the command keeps running, so the default
+  budgets stop at 75 s. The gateway tells the agent not to re-run such a command.
+- **Mesh peers** run relayed commands asynchronously, so the relay waits out the full
+  medium/slow budget.
+- Override the seconds per device (`timeout`, `timeoutMedium`, `timeoutLong` in
+  `hardwareone.devices.json`) or with the variables above; an explicit value is used
+  as given. When running `hw1.sh` by hand, set `HW1_CMD_TIMEOUT` for a slow command.
 
 ## Security model
 

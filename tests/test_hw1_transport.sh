@@ -52,6 +52,7 @@ run_wrapper() {
         FAKE_LOGIN_MODE="${CASE_LOGIN_MODE:-}" \
         FAKE_PROBE_MODE="${CASE_PROBE_MODE:-}" \
         FAKE_CLI_MODE="${CASE_CLI_MODE:-}" \
+        HW1_CMD_TIMEOUT="${CASE_CMD_TIMEOUT:-}" \
         HTTP_PROXY="http://proxy.invalid:8080" \
         HTTPS_PROXY="http://proxy.invalid:8080" \
         ALL_PROXY="socks5://proxy.invalid:1080" \
@@ -123,6 +124,15 @@ assert_status() {
 assert_output_contains() {
     local name="$1" needle="$2"
     if [[ "$CASE_OUTPUT" == *"$needle"* ]]; then pass "$name"; else fail "$name"; fi
+}
+
+assert_call_contains() {
+    local name="$1" url_suffix="$2" needle="$3"
+    if grep '^CALL' "$CASE_LOG" | grep -F -- "$url_suffix" | grep -Fq -- "$needle"; then
+        pass "$name"
+    else
+        fail "$name"
+    fi
 }
 
 assert_args_not_contain() {
@@ -226,6 +236,29 @@ for sent_mode in timeout reset; do
     unset CASE_CLI_MODE
     assert_status "a command $sent_mode after sending exits 1, not 7" 1
     assert_output_contains "a $sent_mode after sending says the command may have run" "after the command was sent"
+done
+
+# The gateway passes each command's budget as HW1_CMD_TIMEOUT; it governs only the
+# command request, never the endpoint check or login.
+CASE_CMD_TIMEOUT=75
+run_wrapper command_budget https://device.test valid valid 0 '' status
+unset CASE_CMD_TIMEOUT
+assert_success "a per-command budget is accepted"
+assert_call_contains "the command request uses HW1_CMD_TIMEOUT" '/api/cli' $'\t--max-time\t75\t'
+# (The endpoint check's -w format contains a newline, which splits its log entry, so it
+# is identified by its unique --max-filesize argument rather than its URL.)
+assert_call_contains "the endpoint check keeps the per-request cap" '--max-filesize' $'\t--max-time\t30\t'
+assert_call_contains "the login keeps the per-request cap" '/login' $'\t--max-time\t30\t'
+
+run_wrapper command_budget_default https://device.test valid valid 0 '' status
+assert_call_contains "without HW1_CMD_TIMEOUT the command uses the per-request cap" '/api/cli' $'\t--max-time\t30\t'
+
+# curl reads --max-time 0 as "no limit", so only positive integers are accepted.
+for bad_budget in 0 -5 abc 1.5; do
+    CASE_CMD_TIMEOUT="$bad_budget"
+    run_wrapper "command_budget_invalid_${PASS_COUNT}" https://device.test valid valid 0 '' status
+    unset CASE_CMD_TIMEOUT
+    assert_call_contains "HW1_CMD_TIMEOUT=$bad_budget falls back to the per-request cap" '/api/cli' $'\t--max-time\t30\t'
 done
 
 run_wrapper curl_isolation https://device.test valid valid 0
