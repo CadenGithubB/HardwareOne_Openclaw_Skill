@@ -27,6 +27,15 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 - Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,
   pre-login endpoint recognition, and curl isolation.
 
+### Fixed
+- Device logins URL-encode the username and password. The firmware url-decodes both
+  fields, so a password containing `&` was truncated, `+` became a space, and `%XX`
+  became a byte — every login failed, and repeated failures lock the device out. The
+  password is now piped to curl on stdin, so it no longer appears in the host's
+  process list. Alphanumeric credentials produce a byte-identical request.
+  **Upgrade note:** if you percent-encoded a password in `hardwareone.env` or
+  `hardwareone.devices.json` to work around this, store it unencoded again.
+
 ## [1.7.0] — 2026-08-03
 
 ### Added

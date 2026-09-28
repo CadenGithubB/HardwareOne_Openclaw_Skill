@@ -244,10 +244,13 @@ resolve_base() {
 do_login() {
     local rc=0
     # No -b here: start from a clean jar so a stale cookie can't mask a bad login.
-    hw_curl "$REQ_TIMEOUT" -o /dev/null \
+    # Both fields are URL-encoded because the device url-decodes them: sent raw, a
+    # password's '&' split the form, '+' became a space, and '%XX' became a byte.
+    # The password is piped on stdin so it never appears in the host's process list.
+    printf '%s' "$PASS" | hw_curl "$REQ_TIMEOUT" -o /dev/null \
         -c "$COOKIE_FILE" \
-        -d "username=$USER" \
-        -d "password=$PASS" \
+        --data-urlencode "username=$USER" \
+        --data-urlencode "password@-" \
         "$URL/login" || rc=$?
     chmod 600 "$COOKIE_FILE" 2>/dev/null || true
     if [[ "$rc" -ne 0 ]]; then

@@ -64,7 +64,7 @@ run_wrapper() {
         SSLKEYLOGFILE="$case_dir/ambient-keylog" \
         HW1_URL="$url" \
         HW1_USER="test-user" \
-        HW1_PASS="test-pass" \
+        HW1_PASS="${CASE_PASS:-test-pass}" \
         HW1_ALLOW_HTTP="$allow_http" \
         HW1_COOKIE_DIR="$case_dir/cookies" \
         "$WRAPPER" "$request" 2>&1)
@@ -105,6 +105,11 @@ assert_log_contains() {
 assert_log_not_contains() {
     local name="$1" needle="$2"
     if grep -Fq -- "$needle" "$CASE_LOG"; then fail "$name"; else pass "$name"; fi
+}
+
+assert_args_not_contain() {
+    local name="$1" needle="$2"
+    if grep '^CALL' "$CASE_LOG" | grep -Fq -- "$needle"; then fail "$name"; else pass "$name"; fi
 }
 
 assert_no_ping_temp() {
@@ -166,6 +171,15 @@ assert_urls_equal "an unrecognized endpoint is rejected before login or command 
 run_wrapper valid_endpoint_before_login https://device.test valid valid 0 '' status
 assert_success "a recognizable endpoint permits normal login and CLI flow"
 assert_urls_equal "endpoint probe precedes login and command dispatch" $'https://device.test/api/ping\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli'
+
+CASE_PASS='p&ss+w%41rd x'
+run_wrapper login_encoding https://device.test valid valid 0 '' status
+unset CASE_PASS
+assert_success "a password with form metacharacters logs in"
+assert_log_contains "the username is URL-encoded" $'\t--data-urlencode\tusername=test-user'
+assert_log_contains "the password is URL-encoded from stdin" $'\t--data-urlencode\tpassword@-'
+assert_log_contains "stdin carries the exact password" $'STDIN\tpassword\tp&ss+w%41rd x'
+assert_args_not_contain "the password never appears in curl arguments" 'p&ss+w%41rd x'
 
 run_wrapper curl_isolation https://device.test valid valid 0
 assert_success "isolated curl invocation succeeds"

@@ -39,6 +39,14 @@ while [[ "$i" -lt "${#args[@]}" ]]; do
             i=$((i + 1))
             max_filesize="${args[$i]}"
             ;;
+        --data-urlencode)
+            i=$((i + 1))
+            # name@- reads the value from stdin; record it so tests can prove the
+            # secret arrived there rather than in the argument list.
+            if [[ "${args[$i]}" == *@- ]]; then
+                printf 'STDIN\t%s\t%s\n' "${args[$i]%@-}" "$(cat)" >> "$FAKE_CURL_LOG"
+            fi
+            ;;
         http://*|https://*)
             url="$arg"
             ;;
