@@ -25,7 +25,10 @@ const CAMERA_WARMUP_MS = 90_000;      // `opencamera` can block while the sensor
 
 const SAFE_CLI_RE = /^[\x20-\x7E]+$/;
 const SAFE_DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
-const UNREACHABLE_RE = /could not reach|connection refused|timed out|resolve host|TLS\/certificate/i;
+// hw1.sh exits 7 only when the command was never sent: the device could not be
+// reached or verified, or the login failed in transit. Any other failure may leave
+// the command running on (or already applied by) the device.
+const EXIT_NOT_SENT = 7;
 
 const truthy = (v) => v === true || v === 1 || v === "1" || v === "true";
 
@@ -280,8 +283,10 @@ function runHw1(device, argv, opts = {}) {
   });
 }
 
-function isUnreachable(res) {
-  return res.exitCode === 7 || (res.stderr && UNREACHABLE_RE.test(res.stderr));
+// Only the exit status decides — never stderr text. A timeout after dispatch also
+// prints "timed out", and failing over then would run the command a second time.
+function wasNotSent(res) {
+  return res.exitCode === EXIT_NOT_SENT;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -378,7 +383,8 @@ async function relayMeshProbe(registry, peer) {
 }
 
 // Resolve the target device, run, and fail over to a backup ONLY when the implicit
-// default (the master) is unreachable. An explicitly named device is never failed over.
+// default (the master) was unreachable before the command was sent to it. An explicitly
+// named device is never failed over.
 // A mesh-only device has no direct HTTP — its commands are relayed through the master via
 // espnowremote (creds injected host-side; the async reply is polled back).
 async function runOnDevice(requestedDevice, argv) {
@@ -412,7 +418,7 @@ async function runOnDevice(requestedDevice, argv) {
   try { res = await runHw1(device, argv); }
   catch (err) { return errorResult(String(err && err.message ? err.message : err)); }
 
-  if (allowFailover && isUnreachable(res)) {
+  if (allowFailover && wasNotSent(res)) {
     const bname = backupName(registry);
     if (bname && bname !== device.name) {
       try {
@@ -430,7 +436,7 @@ function formatResult(res, meta = {}) {
   const suffix = res.truncated ? "\n\n[output truncated]" : "";
   const prefix = res.exitCode !== 0 ? `[exit ${res.exitCode}] ` : "";
   const fo = meta.failedOverFrom
-    ? `[failed over ${meta.failedOverFrom} → ${meta.device}: master unreachable]\n`
+    ? `[failed over ${meta.failedOverFrom} → ${meta.device}: '${meta.failedOverFrom}' was unreachable, so the command was not sent to it]\n`
     : "";
   return {
     content: [{ type: "text", text: fo + prefix + body + suffix }],

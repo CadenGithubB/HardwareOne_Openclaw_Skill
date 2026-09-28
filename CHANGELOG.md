@@ -35,6 +35,12 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   process list. Alphanumeric credentials produce a byte-identical request.
   **Upgrade note:** if you percent-encoded a password in `hardwareone.env` or
   `hardwareone.devices.json` to work around this, store it unencoded again.
+- Backup failover no longer re-runs a command the master may already have executed.
+  The gateway matched "timed out" in the wrapper's error text, so a command that was
+  sent and then timed out (e.g. `reboot`) ran again on the backup. `hw1.sh` now exits
+  `7` only when no command request left the host — the device was unreachable or
+  unverified, or the login failed in transit — and the gateway fails over on that exit
+  status alone. Failures after dispatch say the command may still be running.
 
 ## [1.7.0] — 2026-08-03
 

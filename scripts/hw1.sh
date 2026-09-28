@@ -113,6 +113,31 @@ report_curl_failure() {
     esac
 }
 
+# Exit status 7 means the command was NOT sent: the device could not be reached or
+# verified, or the login failed in transit, before any command request went out. The
+# gateway fails over to a backup only on this status — after dispatch the command may
+# be running on (or already applied by) the device, and re-running it elsewhere would
+# duplicate it.
+EXIT_NOT_SENT=7
+
+# curl exit codes that mean the request never left this host: name resolution,
+# connection refused, and TLS/certificate failures before the handshake completed.
+# A timeout (28) is deliberately absent — it can fire after the request was sent.
+curl_failed_before_send() {
+    case "$1" in
+        5|6|7|35|51|53|54|58|59|60|77|83|90|91) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# A failure AFTER the command request was sent: the device may have run it.
+report_dispatch_failure() {
+    case "$1" in
+        28) echo "Error: no response within ${2}s after the command was sent. It may still be running on the device, or it may have finished; check its state before running it again." >&2 ;;
+        *)  echo "Error: the connection failed after the command was sent (curl exit $1). It may or may not have run on the device; check its state before running it again." >&2 ;;
+    esac
+}
+
 # A public ping is the only response allowed to identify a HardwareOne endpoint shape
 # before login. It is not cryptographic device identity; that requires verified TLS or
 # an operator-pinned certificate/identity. Firmware v0.99.7+ emits this exact compact
@@ -241,6 +266,8 @@ resolve_base() {
 # --- Auth: log in, then PROVE the session works via an auth-gated endpoint ---
 # Verification uses a RAW request (never re-enters do_login) so there is no
 # re-login loop. /api/system returns 200 when authed, 401 when not.
+# Returns 0 on success, 1 when the device rejected the login, and 2 when a request
+# failed in transit (so callers can tell "unreachable" from "wrong credentials").
 do_login() {
     local rc=0
     # No -b here: start from a clean jar so a stale cookie can't mask a bad login.
@@ -255,7 +282,7 @@ do_login() {
     chmod 600 "$COOKIE_FILE" 2>/dev/null || true
     if [[ "$rc" -ne 0 ]]; then
         report_curl_failure "$rc"
-        return 1
+        return 2
     fi
 
     local code="000" vrc=0
@@ -263,7 +290,7 @@ do_login() {
         -b "$COOKIE_FILE" "$URL$AUTH_PROBE") || vrc=$?
     if [[ "$vrc" -ne 0 ]]; then
         report_curl_failure "$vrc"
-        return 1
+        return 2
     fi
     if [[ "$code" == "200" ]]; then
         return 0
@@ -357,7 +384,13 @@ do_cli() {
             --data-urlencode "cmd=$cmd" -d "capture=1" \
             "$URL/api/cli") || rc=$?
         if [[ "$rc" -ne 0 ]]; then
-            rm -f "$body_file"; report_curl_failure "$rc"; return 1
+            rm -f "$body_file"
+            # An earlier attempt in this loop (401/429) was rejected, not executed, so
+            # a failure before this request left the host still means "not sent".
+            if curl_failed_before_send "$rc"; then
+                report_curl_failure "$rc"; return "$EXIT_NOT_SENT"
+            fi
+            report_dispatch_failure "$rc" "$mt"; return 1
         fi
         body=$(cat "$body_file"); rm -f "$body_file"
 
@@ -385,9 +418,21 @@ do_cli() {
     return 1
 }
 
+# Log in unless a session cookie already exists. Nothing has been dispatched yet, so a
+# transport failure here still means the command was not sent.
+ensure_session() {
+    [[ -f "$COOKIE_FILE" ]] && return 0
+    local rc=0
+    do_login || rc=$?
+    case "$rc" in
+        0) return 0 ;;
+        2) exit "$EXIT_NOT_SENT" ;;
+        *) exit 1 ;;
+    esac
+}
+
 # --- Main ---
-# exit 7 = device unreachable at the transport layer (device down) so the gateway can fail over.
-resolve_base || exit 7
+resolve_base || exit "$EXIT_NOT_SENT"
 
 case "${1:-}" in
     --ping)
@@ -396,15 +441,15 @@ case "${1:-}" in
         if [[ -z "${2:-}" ]]; then
             echo "Error: --get requires a path (e.g. --get /api/sensors)" >&2; exit 1
         fi
-        [[ -f "$COOKIE_FILE" ]] || do_login || exit 1
+        ensure_session
         do_get "$2"; exit $? ;;
     --get-b64)
         if [[ -z "${2:-}" ]]; then
             echo "Error: --get-b64 requires a path (e.g. --get-b64 /api/sensors/camera/frame)" >&2; exit 1
         fi
-        [[ -f "$COOKIE_FILE" ]] || do_login || exit 1
+        ensure_session
         do_get_b64 "$2"; exit $? ;;
 esac
 
-[[ -f "$COOKIE_FILE" ]] || do_login || exit 1
+ensure_session
 do_cli "$1"

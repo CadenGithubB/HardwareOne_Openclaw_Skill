@@ -141,6 +141,60 @@ test("registry diagnostics never quote the registry's contents", async (t) => {
   assert.doesNotMatch(text, /192\.0\.2\.(42|77|99)/);
 });
 
+test("failover happens only when the command was never sent", async (t) => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "hardwareone-plugin-failover-"));
+  const callLog = join(dir, "calls.log");
+  process.env.FAKE_HW1_LOG = callLog;
+  t.after(async () => {
+    delete process.env.FAKE_HW1_LOG;
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+  const wrapper = join(dir, "fake-hw1-failover.sh");
+  await fs.writeFile(wrapper, [
+    "#!/bin/sh",
+    'printf "%s %s\\n" "$HW1_URL" "$*" >> "$FAKE_HW1_LOG"',
+    'case "$HW1_URL" in',
+    '  *not-sent*) echo "Error: could not verify a HardwareOne device" >&2; exit 7 ;;',
+    '  *sent-timeout*) echo "Error: no response within 30s after the command was sent." >&2; exit 1 ;;',
+    "esac",
+    'echo "ran: $*"',
+    "",
+  ].join("\n"), { mode: 0o700 });
+  const registry = join(dir, "devices.json");
+  const missingLegacyEnv = join(dir, "missing.env");
+  const withMaster = (url) => fs.writeFile(registry, JSON.stringify({
+    default: "master",
+    devices: {
+      master: { url, user: "user", pass: "pass", role: "master" },
+      spare: { url: "https://spare.test", user: "user", pass: "pass", role: "backup" },
+    },
+  }));
+  const run = async (params) => {
+    await fs.writeFile(callLog, "");
+    const tools = await loadTools({ wrapper, registry, legacyEnv: missingLegacyEnv });
+    const result = await tools.find((tool) => tool.name === "hardwareone_cli").execute("test-call", params);
+    const calls = (await fs.readFile(callLog, "utf8")).trim().split("\n");
+    return { text: result.content[0].text, calls };
+  };
+
+  // Not sent to the master (exit 7): safe to run on the backup instead.
+  await withMaster("https://not-sent.test");
+  let outcome = await run({ command: "reboot" });
+  assert.deepEqual(outcome.calls, ["https://not-sent.test reboot", "https://spare.test reboot"]);
+  assert.match(outcome.text, /^\[failed over master → spare: 'master' was unreachable, so the command was not sent to it\]\nran: reboot/);
+
+  // Sent, then timed out: the master may have rebooted, so it must not run twice.
+  await withMaster("https://sent-timeout.test");
+  outcome = await run({ command: "reboot" });
+  assert.deepEqual(outcome.calls, ["https://sent-timeout.test reboot"]);
+  assert.match(outcome.text, /after the command was sent/);
+
+  // An explicitly named device never fails over.
+  await withMaster("https://not-sent.test");
+  outcome = await run({ command: "reboot", device: "master" });
+  assert.deepEqual(outcome.calls, ["https://not-sent.test reboot"]);
+});
+
 test("only configured devices resolve, even for Object.prototype names", async (t) => {
   const dir = await fs.mkdtemp(join(tmpdir(), "hardwareone-plugin-device-lookup-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));

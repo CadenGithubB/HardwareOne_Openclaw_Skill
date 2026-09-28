@@ -49,6 +49,9 @@ run_wrapper() {
         FAKE_CURL_LOG="$CASE_LOG" \
         FAKE_HTTPS_MODE="$https_mode" \
         FAKE_HTTP_MODE="$http_mode" \
+        FAKE_LOGIN_MODE="${CASE_LOGIN_MODE:-}" \
+        FAKE_PROBE_MODE="${CASE_PROBE_MODE:-}" \
+        FAKE_CLI_MODE="${CASE_CLI_MODE:-}" \
         HTTP_PROXY="http://proxy.invalid:8080" \
         HTTPS_PROXY="http://proxy.invalid:8080" \
         ALL_PROXY="socks5://proxy.invalid:1080" \
@@ -105,6 +108,21 @@ assert_log_contains() {
 assert_log_not_contains() {
     local name="$1" needle="$2"
     if grep -Fq -- "$needle" "$CASE_LOG"; then fail "$name"; else pass "$name"; fi
+}
+
+assert_status() {
+    local name="$1" expected="$2"
+    if [[ "$CASE_STATUS" -eq "$expected" ]]; then
+        pass "$name"
+    else
+        CASE_OUTPUT="exit $CASE_STATUS, expected $expected: $CASE_OUTPUT"
+        fail "$name"
+    fi
+}
+
+assert_output_contains() {
+    local name="$1" needle="$2"
+    if [[ "$CASE_OUTPUT" == *"$needle"* ]]; then pass "$name"; else fail "$name"; fi
 }
 
 assert_args_not_contain() {
@@ -180,6 +198,35 @@ assert_log_contains "the username is URL-encoded" $'\t--data-urlencode\tusername
 assert_log_contains "the password is URL-encoded from stdin" $'\t--data-urlencode\tpassword@-'
 assert_log_contains "stdin carries the exact password" $'STDIN\tpassword\tp&ss+w%41rd x'
 assert_args_not_contain "the password never appears in curl arguments" 'p&ss+w%41rd x'
+
+# Exit status 7 ("not sent") is the only status the gateway fails over on, so it must
+# mean that no command request left the host.
+run_wrapper not_sent_unreachable device.test refused valid 0 '' status
+assert_status "an unreachable device exits 7 (not sent)" 7
+
+CASE_LOGIN_MODE=timeout
+run_wrapper not_sent_login_timeout https://device.test valid valid 0 '' status
+unset CASE_LOGIN_MODE
+assert_status "a login lost in transit exits 7 (not sent)" 7
+assert_urls_equal "no command is dispatched after a failed login" $'https://device.test/api/ping\nhttps://device.test/login'
+
+CASE_PROBE_MODE=not_found
+run_wrapper rejected_login https://device.test valid valid 0 '' status
+unset CASE_PROBE_MODE
+assert_status "rejected credentials exit 1, not 7" 1
+
+CASE_CLI_MODE=refused
+run_wrapper not_sent_cli_refused https://device.test valid valid 0 '' status
+unset CASE_CLI_MODE
+assert_status "a command connection refused before sending exits 7" 7
+
+for sent_mode in timeout reset; do
+    CASE_CLI_MODE="$sent_mode"
+    run_wrapper "sent_then_$sent_mode" https://device.test valid valid 0 '' status
+    unset CASE_CLI_MODE
+    assert_status "a command $sent_mode after sending exits 1, not 7" 1
+    assert_output_contains "a $sent_mode after sending says the command may have run" "after the command was sent"
+done
 
 run_wrapper curl_isolation https://device.test valid valid 0
 assert_success "isolated curl invocation succeeds"

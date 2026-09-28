@@ -61,6 +61,12 @@ case "$url" in
     http://*) mode="${FAKE_HTTP_MODE:-valid}" ;;
     *) mode="transport_error" ;;
 esac
+# Per-endpoint overrides, for failures after the /api/ping identity check passed.
+case "$url" in
+    */login) mode="${FAKE_LOGIN_MODE:-$mode}" ;;
+    */api/system) mode="${FAKE_PROBE_MODE:-$mode}" ;;
+    */api/cli) mode="${FAKE_CLI_MODE:-$mode}" ;;
+esac
 
 code=200
 content_type="application/json"
