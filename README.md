@@ -97,6 +97,18 @@ verify the subsystem-specific result.
    ```
    Then, in a fresh agent session: *"ping the hardwareone."*
 
+## Tests
+
+Run from the repository root (Node 22+; the end-to-end test also needs `curl`):
+
+```bash
+bash tests/test_hw1_transport.sh                  # wrapper transport rules, against a fake curl
+node --test plugin/hardwareone-tool.test.js      # gateway tools, against a fake wrapper
+node --test tests/hw1_e2e.test.js                # real curl + wrapper against a local mock device
+```
+
+On macOS these also check compatibility with the system `/bin/bash` 3.2 and curl.
+
 ## Keeping the reference in sync with firmware
 
 ```bash
