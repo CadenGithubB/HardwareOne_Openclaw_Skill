@@ -42,6 +42,20 @@ function cleanDescription(v) {
   return cut.trimEnd() + "…";
 }
 
+// Registry diagnostics are returned to the agent, so they must never quote the
+// registry's contents (addresses and credentials live there). JSON.parse messages
+// can embed the text around a syntax error — e.g. an unquoted "pass" value — so
+// report only the numeric location; a JSON validator on the host shows the rest.
+function jsonErrorLocation(err, text) {
+  const msg = String((err && err.message) || "");
+  const lineCol = msg.match(/\(line (\d+) column (\d+)\)/);
+  if (lineCol) return `line ${lineCol[1]}, column ${lineCol[2]}`;
+  const pos = msg.match(/at position (\d+)/);
+  if (!pos) return "";
+  const before = text.slice(0, Number(pos[1]));
+  return `line ${before.split("\n").length}, column ${before.length - before.lastIndexOf("\n")}`;
+}
+
 // ── device registry ──────────────────────────────────────────────────────────
 // A device is either reached DIRECTLY over HTTP (url + creds), or only via the master's
 // ESP-NOW mesh (`"via": "mesh"` — no url/creds; the agent reaches it by running
@@ -84,12 +98,16 @@ async function readJsonRegistry(warnings) {
   try {
     text = await fs.readFile(HW1_DEVICES_FILE, "utf8");
   } catch (e) {
-    if (e.code !== "ENOENT") warnings.push(`could not read ${HW1_DEVICES_FILE}: ${e.message}`);
+    if (e.code !== "ENOENT") warnings.push(`could not read ${HW1_DEVICES_FILE} (${e.code || "read error"})`);
     return null;
   }
   let json;
   try { json = JSON.parse(text); }
-  catch (e) { warnings.push(`invalid JSON in ${HW1_DEVICES_FILE}: ${e.message}`); return null; }
+  catch (e) {
+    const where = jsonErrorLocation(e, text);
+    warnings.push(`invalid JSON in ${HW1_DEVICES_FILE}${where ? ` at ${where}` : ""} — check it on the host (e.g. python3 -m json.tool <file>)`);
+    return null;
+  }
   if (!json || typeof json !== "object" || !json.devices || typeof json.devices !== "object") {
     warnings.push(`${HW1_DEVICES_FILE} has no "devices" object`);
     return null;
@@ -99,8 +117,9 @@ async function readJsonRegistry(warnings) {
     warnings.push('defaults.allowHttp is ignored — set allowHttp:true on each direct device that may use plaintext HTTP');
   }
   const devices = {};
+  let invalidNames = 0;
   for (const [name, raw] of Object.entries(json.devices)) {
-    if (!SAFE_DEVICE_RE.test(name)) { warnings.push(`ignored invalid device name '${name}'`); continue; }
+    if (!SAFE_DEVICE_RE.test(name)) { invalidNames += 1; continue; }
     if (raw && typeof raw === "object" && Object.prototype.hasOwnProperty.call(raw, "allowHttp") && typeof raw.allowHttp !== "boolean") {
       warnings.push(`device '${name}' has a non-boolean allowHttp value — ignored; use the JSON boolean true for plaintext fallback`);
     }
@@ -117,6 +136,10 @@ async function readJsonRegistry(warnings) {
       warnings.push(`mesh device '${name}' has whitespace in its credentials — espnowremote splits arguments on spaces, so the relay will fail; use space-free user/pass`);
     }
     devices[name] = d;
+  }
+  if (invalidNames > 0) {
+    // Not echoed: a key that fails validation may be a misplaced URL or password.
+    warnings.push(`ignored ${invalidNames} device${invalidNames === 1 ? "" : "s"} whose name is not 1-40 letters, digits, _ or - (check the "devices" keys)`);
   }
   return { devices, declaredDefault: json.default };
 }
@@ -156,8 +179,13 @@ async function buildRegistry() {
     const names = Object.keys(devices);
     const directNames = names.filter((n) => devices[n].via === "direct");
     const masters = directNames.filter((n) => devices[n].role === "master");
-    let def = declaredDefault;
-    if (def && !devices[def]) { warnings.push(`default '${def}' is not a configured device`); def = undefined; }
+    let def = declaredDefault ? String(declaredDefault) : undefined;
+    if (def && !devices[def]) {
+      warnings.push(SAFE_DEVICE_RE.test(def)
+        ? `default '${def}' is not a configured device`
+        : `"default" is not a valid device name (check its value)`);
+      def = undefined;
+    }
     if (def && devices[def] && devices[def].via === "mesh") {
       warnings.push(`default '${def}' is mesh-only and can't be the direct endpoint; pick a direct master`);
       def = undefined;

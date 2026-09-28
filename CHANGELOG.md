@@ -14,6 +14,10 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   and timeouts never authorize an HTTP downgrade.
 - Isolate device requests from user curl configuration and ambient proxy variables,
   restrict curl to HTTP(S), and disable redirects.
+- Keep the host-only device registry's contents out of agent-visible diagnostics. A
+  JSON syntax error is reported by line/column only (Node's parser message can quote
+  the surrounding text, including an unquoted password), and device keys or a
+  `default` value that fail name validation are counted rather than echoed.
 
 ### Added
 - Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,

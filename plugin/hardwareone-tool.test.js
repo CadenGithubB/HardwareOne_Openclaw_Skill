@@ -97,3 +97,46 @@ test("only an explicit per-device HTTP opt-in reaches the wrapper", async (t) =>
   const legacyTools = await loadTools({ wrapper, registry: missingRegistry, legacyEnv });
   assert.equal(await pingAllowHttp(legacyTools), "legacy.local|1");
 });
+
+test("registry diagnostics never quote the registry's contents", async (t) => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "hardwareone-plugin-registry-diagnostics-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const wrapper = await makeFakeWrapper(dir);
+  const registry = join(dir, "devices.json");
+  const missingLegacyEnv = join(dir, "missing.env");
+  delete process.env.HW1_URL;
+  delete process.env.HW1_USER;
+  delete process.env.HW1_PASS;
+  const devicesText = async (tools) =>
+    (await tools.find((tool) => tool.name === "hardwareone_devices").execute("test-call", {})).content[0].text;
+
+  // An unquoted value is a common hand-editing mistake, and Node's JSON.parse
+  // message for it quotes the surrounding text — password included.
+  await fs.writeFile(registry,
+    '{"devices":{"node-a":{"url":"https://192.0.2.42","user":"admin","pass":hunter2-SECRET}}}');
+  let tools = await loadTools({ wrapper, registry, legacyEnv: missingLegacyEnv });
+  for (const text of [await devicesText(tools), (await pingTool(tools).execute("test-call", {})).content[0].text]) {
+    assert.match(text, /invalid JSON/);
+    assert.doesNotMatch(text, /hunter2|SECRET|192\.0\.2\.42/);
+  }
+
+  // Positional syntax errors still report where to look.
+  await fs.writeFile(registry, '{"devices":{"node-a":{"user":"admin",}}}');
+  tools = await loadTools({ wrapper, registry, legacyEnv: missingLegacyEnv });
+  assert.match(await devicesText(tools), /invalid JSON in .* at line 1, column \d+/);
+
+  // A key or "default" that fails name validation may be a misplaced address or
+  // secret, so it is counted rather than echoed.
+  await fs.writeFile(registry, JSON.stringify({
+    default: "https://192.0.2.99",
+    devices: {
+      "https://192.0.2.77": { url: "https://192.0.2.77", user: "admin", pass: "pw" },
+      "node-a": { url: "https://192.0.2.42", user: "admin", pass: "pw", role: "master" },
+    },
+  }));
+  tools = await loadTools({ wrapper, registry, legacyEnv: missingLegacyEnv });
+  const text = await devicesText(tools);
+  assert.match(text, /ignored 1 device whose name is not/);
+  assert.match(text, /default\\" is not a valid device name/);
+  assert.doesNotMatch(text, /192\.0\.2\.(42|77|99)/);
+});
