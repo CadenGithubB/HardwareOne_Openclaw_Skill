@@ -15,8 +15,18 @@ const ORIGINAL_ENV = new Map(
     "HW1_USER",
     "HW1_PASS",
     "HW1_ALLOW_HTTP",
+    "HW1_TIMEOUT",
+    "HW1_TIMEOUT_MEDIUM",
+    "HW1_TIMEOUT_LONG",
+    "HW1_CONNECT_TIMEOUT",
+    "HW1_CMD_TIMEOUT",
   ].map((key) => [key, process.env[key]]),
 );
+
+// The expectations assume no HardwareOne tuning in the shell running the tests.
+for (const key of ["HW1_TIMEOUT", "HW1_TIMEOUT_MEDIUM", "HW1_TIMEOUT_LONG", "HW1_CONNECT_TIMEOUT", "HW1_CMD_TIMEOUT"]) {
+  delete process.env[key];
+}
 
 after(() => {
   for (const [key, value] of ORIGINAL_ENV) {
@@ -264,6 +274,18 @@ test("direct-device budgets stop at the firmware's synchronous wait unless set e
   assert.equal(commandTiming(tuned, ["llmload m.bin"]).commandS, 200); // explicit wins over the cap
   assert.equal(commandTiming(tuned, ["llmload m.bin"]).killAfterMs, (200 + 2 * 20 + 5) * 1000);
   assert.equal(commandTiming({ name: "c", timeoutLong: "nonsense" }, ["llmload"]).commandS, 75);
+  // The gateway's own HW1_TIMEOUT* variables, which hw1.sh always inherited, still
+  // apply when the device does not set its own value.
+  const savedEnv = ["HW1_TIMEOUT", "HW1_TIMEOUT_LONG"].map((k) => [k, process.env[k]]);
+  try {
+    process.env.HW1_TIMEOUT = "45";
+    process.env.HW1_TIMEOUT_LONG = "240";
+    assert.equal(commandTiming(plain, ["status"]).commandS, 45);
+    assert.equal(commandTiming(plain, ["llmload m.bin"]).commandS, 240);
+    assert.equal(commandTiming(tuned, ["llmload m.bin"]).commandS, 200); // the device still wins
+  } finally {
+    for (const [k, v] of savedEnv) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
   // Relayed commands run asynchronously on the peer, so they get the full budget.
   assert.equal(relayWaitMs("status"), 15_000);
   assert.equal(relayWaitMs("opencamera"), 120_000);

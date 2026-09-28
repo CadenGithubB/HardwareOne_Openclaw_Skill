@@ -259,12 +259,18 @@ function positiveSeconds(v) {
 // How long one hw1.sh run may take. `commandS` is the budget for the command's own
 // response (hw1.sh's HW1_CMD_TIMEOUT); `killAfterMs` also covers the endpoint check
 // and login that precede it, as a backstop for a wrapper that stops responding.
+// Precedence per class: the device's setting, then the gateway's HW1_TIMEOUT* variables
+// (which hw1.sh has always inherited), then the built-in default.
 export function commandTiming(device, argv) {
-  const requestS = positiveSeconds(device.timeout) || SPEED_SECONDS.fast;
+  const env = process.env;
+  const requestS = positiveSeconds(device.timeout) || positiveSeconds(env.HW1_TIMEOUT) || SPEED_SECONDS.fast;
   const isCommand = argv.length === 1 && !argv[0].startsWith("--");
   const speed = isCommand ? commandSpeed(argv[0]) : "fast";
-  const explicit = positiveSeconds(
-    { fast: device.timeout, medium: device.timeoutMedium, slow: device.timeoutLong }[speed]);
+  const explicit = {
+    fast: requestS, // the 30 s default is already under the direct-device cap
+    medium: positiveSeconds(device.timeoutMedium) || positiveSeconds(env.HW1_TIMEOUT_MEDIUM),
+    slow: positiveSeconds(device.timeoutLong) || positiveSeconds(env.HW1_TIMEOUT_LONG),
+  }[speed];
   const commandS = Math.ceil(explicit || Math.min(SPEED_SECONDS[speed], DIRECT_WAIT_CAP_S));
   return { speed, commandS: isCommand ? commandS : null, killAfterMs: (commandS + 2 * requestS + 5) * 1000 };
 }
