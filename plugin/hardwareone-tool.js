@@ -63,6 +63,14 @@ function jsonErrorLocation(err, text) {
 // the mesh jumping-off point. Connection + role only — a device's room/location/purpose
 // is NOT here; that lives on the device (espnowroom/zone/tags) and in the memory note.
 // Falls back to the legacy flat hardwareone.env (HW1_URL/USER/PASS) for a single device.
+
+// Device lookups take agent-supplied names, and SAFE_DEVICE_RE admits names such as
+// "constructor" or "toString". A prototype-less map guarantees that only configured
+// devices resolve; with a plain object those names found Object.prototype members.
+function deviceMap(entries = {}) {
+  return Object.assign(Object.create(null), entries);
+}
+
 function normalizeDevice(name, raw, defaults) {
   const m = { ...defaults, ...raw };
   const role = String(m.role || "worker").toLowerCase();
@@ -116,7 +124,7 @@ async function readJsonRegistry(warnings) {
   if (truthy(defaults.allowHttp)) {
     warnings.push('defaults.allowHttp is ignored — set allowHttp:true on each direct device that may use plaintext HTTP');
   }
-  const devices = {};
+  const devices = deviceMap();
   let invalidNames = 0;
   for (const [name, raw] of Object.entries(json.devices)) {
     if (!SAFE_DEVICE_RE.test(name)) { invalidNames += 1; continue; }
@@ -208,8 +216,8 @@ async function buildRegistry() {
     return { devices, default: def || null, warnings, notes };
   }
   const legacy = await readLegacyDevice(warnings);
-  if (legacy) return { devices: { default: legacy }, default: "default", warnings, notes };
-  return { devices: {}, default: null, warnings, notes };
+  if (legacy) return { devices: deviceMap({ default: legacy }), default: "default", warnings, notes };
+  return { devices: deviceMap(), default: null, warnings, notes };
 }
 
 // A backup must itself be directly reachable (it becomes the HTTP endpoint on failover).

@@ -140,3 +140,31 @@ test("registry diagnostics never quote the registry's contents", async (t) => {
   assert.match(text, /default\\" is not a valid device name/);
   assert.doesNotMatch(text, /192\.0\.2\.(42|77|99)/);
 });
+
+test("only configured devices resolve, even for Object.prototype names", async (t) => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "hardwareone-plugin-device-lookup-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const wrapper = await makeFakeWrapper(dir);
+  const registry = join(dir, "devices.json");
+  await fs.writeFile(registry, JSON.stringify({
+    devices: { "node-a": { url: "https://node-a.test", user: "user", pass: "pass", role: "master" } },
+  }));
+  const legacyEnv = join(dir, "hardwareone.env");
+  await fs.writeFile(legacyEnv, "HW1_URL=legacy.test\nHW1_USER=user\nHW1_PASS=pass\n");
+  delete process.env.HW1_URL;
+  delete process.env.HW1_USER;
+  delete process.env.HW1_PASS;
+
+  // Both the JSON registry and the legacy single-device fallback.
+  for (const registryPath of [registry, join(dir, "missing-devices.json")]) {
+    const tools = await loadTools({ wrapper, registry: registryPath, legacyEnv });
+    const cli = tools.find((tool) => tool.name === "hardwareone_cli");
+    const camera = tools.find((tool) => tool.name === "hardwareone_camera");
+    for (const device of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const viaCli = await cli.execute("test-call", { command: "status", device });
+      assert.match(viaCli.content[0].text, /^Error: unknown device/, `cli ${device}`);
+      const viaCamera = await camera.execute("test-call", { device, describe: false });
+      assert.match(viaCamera.content[0].text, /^Error: unknown device/, `camera ${device}`);
+    }
+  }
+});

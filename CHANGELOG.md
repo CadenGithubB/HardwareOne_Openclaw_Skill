@@ -18,6 +18,10 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   JSON syntax error is reported by line/column only (Node's parser message can quote
   the surrounding text, including an unquoted password), and device keys or a
   `default` value that fail name validation are counted rather than echoed.
+- Resolve device names against configured devices only. Names such as `constructor`
+  or `toString` previously matched built-in object members, bypassing the "unknown
+  device" check and running the wrapper with no device selected — which then fell
+  back to whatever `hardwareone.env` contained, outside the registry's per-device policy.
 
 ### Added
 - Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,
