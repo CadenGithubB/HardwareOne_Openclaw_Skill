@@ -50,6 +50,11 @@ and restart the gateway.
 
 ## Heads-up
 
+Recent OpenClaw versions ask you to approve a local plugin's capabilities during
+install. For HardwareOne that is its four `hardwareone_*` tools; answer `y`. It reports
+"Prompt injection: allowed" by default; the plugin registers no prompt hooks, and the
+deploy script switches that permission off in `openclaw.json`.
+
 The plugin targets OpenClaw 2026.7.1 or newer and imports the public plugin SDK.
 If runtime inspection does not show all HardwareOne tools, check the gateway log
 and `openclaw plugins inspect hardwareone --runtime --json`.

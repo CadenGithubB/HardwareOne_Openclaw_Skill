@@ -14,6 +14,10 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   and timeouts never authorize an HTTP downgrade.
 - Isolate device requests from user curl configuration and ambient proxy variables,
   restrict curl to HTTP(S), and disable redirects.
+- The plugin deploy switches off the plugin's prompt-injection permission
+  (`plugins.entries.hardwareone.hooks.allowPromptInjection: false`). The plugin only
+  provides tools and registers no prompt hooks. The deploy now merges into the
+  plugin's config entry instead of replacing it, so other settings there survive.
 - Keep the host-only device registry's contents out of agent-visible diagnostics. A
   JSON syntax error is reported by line/column only (Node's parser message can quote
   the surrounding text, including an unquoted password), and device keys or a
@@ -61,6 +65,8 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   supplied the connection, so they were silently ignored.
 - A tool call cancelled by OpenClaw stops its wrapper (and any mesh-relay polling)
   instead of running on until its timeout.
+- `deploy/install.sh` no longer reports "no credentials found" when devices are
+  configured in `hardwareone.devices.json`; it only knew about `hardwareone.env`.
 
 ## [1.7.0] — 2026-08-03
 

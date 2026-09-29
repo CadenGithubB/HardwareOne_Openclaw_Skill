@@ -87,8 +87,11 @@ verify the subsystem-specific result.
    ```bash
    bash plugin/deploy.sh
    ```
-   It installs the plugin through OpenClaw's managed local-plugin workflow, ensures the
-   tool allowlists in `openclaw.json`, and restarts the gateway. The plugin lives outside
+   It installs the plugin through OpenClaw's managed local-plugin workflow (OpenClaw asks
+   you to approve the plugin's capabilities, its four tools; answer `y`), ensures the
+   tool allowlists in `openclaw.json`, switches off the plugin's prompt-injection
+   permission (`plugins.entries.hardwareone.hooks.allowPromptInjection: false`; it only
+   provides tools), and restarts the gateway. The plugin lives outside
    the global npm package, so OpenClaw core upgrades no longer wipe it out. Re-run the
    deploy script whenever this plugin itself changes.
 4. **Verify**:

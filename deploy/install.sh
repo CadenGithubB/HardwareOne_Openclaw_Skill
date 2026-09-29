@@ -49,8 +49,15 @@ fi
 # A .env inside the skill dir gets mirrored into the agent sandbox — never leave one.
 rm -f "$WORKSPACE/.env"
 rm -f "$HOME"/.openclaw/sandboxes/*/skills/hardwareone/.env
-[[ -f "$HOST_ENV" ]] && echo "   credentials: $HOST_ENV" \
-  || echo "   NOTE: no credentials found — create $HOST_ENV (see README step 2)"
+REGISTRY="$HOME/.openclaw/hardwareone.devices.json"
+if [[ -f "$REGISTRY" ]]; then
+  echo "   device registry: $REGISTRY"
+elif [[ -f "$HOST_ENV" ]]; then
+  echo "   credentials: $HOST_ENV"
+else
+  echo "   NOTE: no devices configured — create $REGISTRY (see hardwareone.devices.json.template)"
+  echo "         or, for a single device, $HOST_ENV (see README step 2)"
+fi
 
 echo "== 2. sync sandbox mirror(s) so the agent sees the update =="
 shopt -s nullglob
