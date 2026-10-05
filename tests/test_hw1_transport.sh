@@ -13,6 +13,8 @@ PASS_COUNT=0
 FAIL_COUNT=0
 CASE_STATUS=0
 CASE_OUTPUT=""
+CASE_STDOUT=""
+CASE_STDERR=""
 CASE_LOG=""
 CASE_DIR=""
 
@@ -33,6 +35,7 @@ run_wrapper() {
     local name="$1" url="$2" https_mode="$3" http_mode="$4" allow_http="$5"
     local cached_base="${6:-}"
     local request="${7:---ping}"
+    local cli_status="${8:-}" cli_body="${9:-}"
     local case_dir="$TEST_TMP/$name"
     CASE_DIR="$case_dir"
     mkdir -p "$case_dir/cookies" "$case_dir/home"
@@ -41,9 +44,11 @@ run_wrapper() {
     fi
     CASE_LOG="$case_dir/curl.log"
     : > "$CASE_LOG"
+    CASE_STDOUT="$case_dir/stdout"
+    CASE_STDERR="$case_dir/stderr"
 
     set +e
-    CASE_OUTPUT=$(env \
+    env \
         PATH="$FAKE_BIN:/usr/bin:/bin" \
         HOME="$case_dir/home" \
         FAKE_CURL_LOG="$CASE_LOG" \
@@ -67,9 +72,12 @@ run_wrapper() {
         HW1_PASS="test-pass" \
         HW1_ALLOW_HTTP="$allow_http" \
         HW1_COOKIE_DIR="$case_dir/cookies" \
-        "$WRAPPER" "$request" 2>&1)
+        FAKE_CLI_STATUS="$cli_status" \
+        FAKE_CLI_BODY="$cli_body" \
+        "$WRAPPER" "$request" > "$CASE_STDOUT" 2> "$CASE_STDERR"
     CASE_STATUS=$?
     set -e
+    CASE_OUTPUT="$(cat "$CASE_STDOUT" "$CASE_STDERR")"
 }
 
 urls() {
@@ -111,6 +119,55 @@ assert_no_ping_temp() {
     local name="$1" found
     found="$(find "$CASE_DIR/cookies" -name 'ping.*' -print -quit)"
     if [[ -z "$found" ]]; then pass "$name"; else CASE_OUTPUT="$found"; fail "$name"; fi
+}
+
+assert_status() {
+    local name="$1" expected="$2"
+    if [[ "$CASE_STATUS" -eq "$expected" ]]; then
+        pass "$name"
+    else
+        CASE_OUTPUT="expected exit $expected, got $CASE_STATUS: $CASE_OUTPUT"
+        fail "$name"
+    fi
+}
+
+# stdout must be exactly the device body plus the wrapper's single trailing newline.
+assert_stdout_is_body() {
+    local name="$1" body="$2"
+    if printf '%s\n' "$body" | cmp -s - "$CASE_STDOUT"; then
+        pass "$name"
+    else
+        CASE_OUTPUT="stdout was: $(cat "$CASE_STDOUT")"
+        fail "$name"
+    fi
+}
+
+assert_stderr_lines_at_most() {
+    local name="$1" limit="$2" lines
+    lines="$(wc -l < "$CASE_STDERR")"
+    lines="${lines//[[:space:]]/}"
+    if [[ "$lines" -le "$limit" ]]; then
+        pass "$name"
+    else
+        CASE_OUTPUT="stderr had $lines lines: $(cat "$CASE_STDERR")"
+        fail "$name"
+    fi
+}
+
+# The --max-time value curl was given on the /api/cli call.
+cli_max_time() {
+    grep -F $'/api/cli' "$CASE_LOG" | grep -F $'CALL\t' | sed -n $'s/.*\t--max-time\t\([0-9]*\)\t.*/\\1/p' | head -n 1
+}
+
+assert_cli_max_time() {
+    local name="$1" expected="$2" actual
+    actual="$(cli_max_time)"
+    if [[ "$actual" == "$expected" ]]; then
+        pass "$name"
+    else
+        CASE_OUTPUT="expected --max-time $expected on /api/cli, got '$actual'"
+        fail "$name"
+    fi
 }
 
 run_wrapper explicit_https https://device.test valid valid 1
@@ -186,8 +243,12 @@ assert_log_not_contains "curl never enables location following" $'\t--location\t
 assert_log_not_contains "curl never uses short location following" $'\t-L\t'
 
 run_wrapper unsupported_scheme ftp://device.test valid valid 1
-assert_failure "unsupported URL scheme is rejected"
+assert_status "unsupported URL scheme is a configuration error (exit 1, never failover)" 1
 assert_urls_equal "unsupported scheme is rejected before curl" ''
+
+run_wrapper empty_host 'https://' valid valid 1
+assert_status "a URL without a host is a configuration error (exit 1)" 1
+assert_urls_equal "an empty host is rejected before curl" ''
 
 for invalid_url in \
     'https://device.test/' \
@@ -199,9 +260,22 @@ for invalid_url in \
     'device.test:0' \
     'device.test:65536'; do
     run_wrapper "invalid_origin_${PASS_COUNT}" "$invalid_url" valid valid 1
-    assert_failure "non-origin URL is rejected: $invalid_url"
+    assert_status "non-origin URL is a configuration error (exit 1): $invalid_url" 1
     assert_urls_equal "invalid authority is rejected before curl: $invalid_url" ''
 done
+
+# --- unreachable versus misconfigured: only a failed or unverified probe exits 7 ---
+run_wrapper unreachable_refused https://device.test refused valid 0
+assert_status "a refused connection exits 7 (unreachable, failover allowed)" 7
+
+run_wrapper unreachable_not_found https://device.test not_found valid 0
+assert_status "a non-200 probe exits 7 (no verified endpoint)" 7
+
+run_wrapper unreachable_generic_json https://device.test generic_json valid 0
+assert_status "a non-HardwareOne probe body exits 7 (no verified endpoint)" 7
+
+run_wrapper unreachable_redirect https://device.test redirect valid 0
+assert_status "a redirecting probe exits 7 (no verified endpoint)" 7
 
 run_wrapper bracketed_ipv6 '[2001:db8::1]:8443' valid valid 0
 assert_success "bracketed IPv6 authority is accepted"
@@ -210,6 +284,83 @@ assert_urls_equal "bracketed IPv6 remains an HTTPS origin" $'https://[2001:db8::
 run_wrapper link_local_ipv6 '[fe80::1234%25eth0]:8443' valid valid 0
 assert_success "RFC-encoded link-local IPv6 zone authority is accepted"
 assert_urls_equal "link-local IPv6 remains an HTTPS origin" $'https://[fe80::1234%25eth0]:8443/api/ping\nhttps://[fe80::1234%25eth0]:8443/api/ping'
+
+# --- /api/cli result semantics (firmware v0.99.8+: 400/403 carry the device's own text) ---
+CLI_OK_BODY='Uptime: 12s'
+run_wrapper cli_ok https://device.test valid valid 0 '' status 200 "$CLI_OK_BODY"
+assert_status "a 200 command result exits 0" 0
+assert_stdout_is_body "a 200 command result prints the body" "$CLI_OK_BODY"
+assert_urls_equal "a 200 command result is not retried" $'https://device.test/api/ping\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli'
+
+CLI_400_BODY=$'Usage: otaupdate confirm [force-power]\nOnly a staged image can be applied.'
+run_wrapper cli_rejected_400 https://device.test valid valid 0 '' 'otaupdate now' 400 "$CLI_400_BODY"
+assert_status "a 400 command rejection exits 3" 3
+assert_stdout_is_body "a 400 command rejection prints the device text verbatim" "$CLI_400_BODY"
+assert_stderr_lines_at_most "a 400 command rejection adds at most one stderr line" 1
+assert_urls_equal "a 400 command rejection is not retried" $'https://device.test/api/ping\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli'
+
+CLI_UNKNOWN_BODY='Unknown command: camerastart'
+run_wrapper cli_unknown_400 https://device.test valid valid 0 '' camerastart 400 "$CLI_UNKNOWN_BODY"
+assert_status "an unknown command exits 3" 3
+assert_stdout_is_body "an unknown command prints the device text verbatim" "$CLI_UNKNOWN_BODY"
+assert_cli_max_time "camerastart is not a slow command and gets the default timeout" 30
+
+CLI_403_BODY="Error: Admin access required for command 'reboot'. Contact an administrator."
+run_wrapper cli_rejected_403 https://device.test valid valid 0 '' reboot 403 "$CLI_403_BODY"
+assert_status "a 403 command rejection exits 3" 3
+assert_stdout_is_body "a 403 command rejection prints the device text verbatim" "$CLI_403_BODY"
+assert_stderr_lines_at_most "a 403 command rejection adds at most one stderr line" 1
+assert_urls_equal "a 403 command rejection is not retried" $'https://device.test/api/ping\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli'
+
+run_wrapper cli_relogin_401 https://device.test valid valid 0 '' status 401,200 "$CLI_OK_BODY"
+assert_status "a 401 command result re-logins and retries once" 0
+assert_stdout_is_body "the retried command result is printed" "$CLI_OK_BODY"
+assert_urls_equal "a 401 triggers exactly one re-login before the retry" $'https://device.test/api/ping\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli'
+
+CLI_401_BODY='Error: web session changed.'
+run_wrapper cli_persistent_401 https://device.test valid valid 0 '' status 401 "$CLI_401_BODY"
+assert_status "a persistent 401 is a transport error" 1
+assert_stdout_is_body "a persistent 401 prints the device's own text" "$CLI_401_BODY"
+assert_urls_equal "a persistent 401 re-logins exactly once and never a third time" $'https://device.test/api/ping\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli\nhttps://device.test/login\nhttps://device.test/api/system\nhttps://device.test/api/cli'
+
+CLI_429_BODY='{"error":"rate limited"}'
+run_wrapper cli_429_no_interval https://device.test valid valid 0 '' status 429 "$CLI_429_BODY"
+assert_status "a 429 without a retry interval exits 1" 1
+assert_stdout_is_body "a 429 without a retry interval still prints the body" "$CLI_429_BODY"
+
+CLI_500_BODY='Internal error'
+run_wrapper cli_other_500 https://device.test valid valid 0 '' status 500 "$CLI_500_BODY"
+assert_status "an unexpected HTTP status exits 1" 1
+assert_stdout_is_body "an unexpected HTTP status still prints the body" "$CLI_500_BODY"
+
+# --- slow-command timeouts: first token selects HW1_TIMEOUT_LONG ---
+run_wrapper cli_slow_c6update https://device.test valid valid 0 '' 'c6update /sd/fw.bin' 200 'C6 update started'
+assert_status "c6update succeeds" 0
+assert_cli_max_time "c6update is sent with the long timeout" 300
+
+run_wrapper cli_default_status https://device.test valid valid 0 '' status 200 "$CLI_OK_BODY"
+assert_cli_max_time "status is sent with the default timeout" 30
+
+for slow_cmd in 'llmask 0 1' 'llmgenerate hello' 'llmload' 'opencamera' 'certgen' 'otastage confirm' 'otaupdate confirm' 'stt record 5' 'stt start'; do
+    run_wrapper "cli_slow_${PASS_COUNT}" https://device.test valid valid 0 '' "$slow_cmd" 200 'ok'
+    assert_cli_max_time "slow command gets the long timeout: $slow_cmd" 300
+done
+
+for fast_cmd in 'camerastart' 'sttx' 'llmresult json 0' 'otapin status'; do
+    run_wrapper "cli_fast_${PASS_COUNT}" https://device.test valid valid 0 '' "$fast_cmd" 200 'ok'
+    assert_cli_max_time "ordinary command keeps the default timeout: $fast_cmd" 30
+done
+
+# the firmware matches case-insensitively and trims leading whitespace; so does the list
+for slow_cmd in 'OtaUpdate confirm' 'STT record 5' '  stt start' $'\tc6update /sd/fw.bin' 'LLMLOAD cm5:model.gguf'; do
+    run_wrapper "cli_slow_spelling_${PASS_COUNT}" https://device.test valid valid 0 '' "$slow_cmd" 200 'ok'
+    assert_cli_max_time "slow command spelled differently still gets the long timeout: $slow_cmd" 300
+done
+
+for fast_cmd in '  status' 'STTX' 'Otapin status'; do
+    run_wrapper "cli_fast_spelling_${PASS_COUNT}" https://device.test valid valid 0 '' "$fast_cmd" 200 'ok'
+    assert_cli_max_time "ordinary command spelled differently keeps the default timeout: $fast_cmd" 30
+done
 
 printf '\n%d passed, %d failed\n' "$PASS_COUNT" "$FAIL_COUNT"
 [[ "$FAIL_COUNT" -eq 0 ]]

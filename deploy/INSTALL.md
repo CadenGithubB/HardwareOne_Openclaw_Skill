@@ -56,6 +56,13 @@ and `openclaw plugins inspect hardwareone --runtime --json`.
 
 ## Current bundle highlights
 
+- **Firmware v0.99.96 (plus unreleased work, `a172013`) coverage:** catalogs
+  regenerated from HardwareOne `a172013` (963 commands, 52 modules), with agent
+  guidance for signed OTA, the ESP32-C6 radio companion (added after the v0.99.96
+  commit), the Raspberry Pi co-processor, local speech-to-text, the LED matrix,
+  session epochs and inline `confirm` words. The wrapper now returns a rejected
+  command's own diagnostic text (exit 3) and the plugin accepts commands up to 2047
+  characters.
 - **Camera understanding:** `hardwareone_camera` now sends the captured frame through
   OpenClaw's configured image-understanding runtime while the file is still available on
   the gateway. Its result contains both a textual description the agent can reliably read
@@ -69,7 +76,7 @@ and `openclaw plugins inspect hardwareone --runtime --json`.
   registry entries, mark **super-admin** commands, understand dispatcher settings such
   as `power mode`, and record dirty-source provenance when needed.
 - Agent guidance covers HardwareOne's current enable/autostart/live-state model,
-  consent-based ESP-NOW pairing, events/notifications, R1 health capture, G2 device
+  consent-based ESP-NOW pairing, events/notifications, R1 health logging, G2 device
   settings, and guided LLM commands.
 - The installer is now **authoritative**: `--delete` on the skill sync plus a clean plugin
   install drop anything an older version left behind (your host-side `.env` is preserved).

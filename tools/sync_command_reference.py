@@ -6,10 +6,14 @@ the firmware source of truth.
 Every CLI command in the firmware is a `CommandEntry`:
 
     { "name", "help", requiresAdmin /*bool*/, handler, "usage"/*opt*/,
-      ...voice, requiresSuperAdmin /*bool, optional*/ }
+      requiresSuperAdmin /*bool, optional, sixth field*/ }
 
 grouped into per-module arrays aggregated, in order and wrapped in their `#if`
-guards, by `gCommandModules[]` (System_Utils.cpp).
+guards, by `gCommandModules[]` (System_Utils.cpp). A name may contain spaces
+("cm5 power reboot"): the firmware resolves a command line by the longest
+registered name that prefixes it on a whitespace boundary
+(System_CommandLookupCore.h), so such rows are distinct commands and win over
+their shorter prefixes ("cm5 power", "cm5").
 
 Most "configuration" commands are also `SettingEntry` rows:
 
@@ -29,7 +33,11 @@ Re-run whenever the firmware changes; nothing here is hand-maintained.
 
 Usage:
     tools/sync_command_reference.py [--firmware PATH] [--output PATH]
-        [--settings-output PATH] [--json PATH] [--check] [--quiet]
+        [--settings-output PATH] [--json PATH] [--check] [--audit] [--quiet]
+
+--firmware is a checkout of the HardwareOne firmware repository
+(https://github.com/CadenGithubB/HardwareOne). It defaults to $HW1_FIRMWARE,
+else ../HardwareOne next to this skill checkout.
 
 Exit codes: 0 ok / 1 --check stale / 2 parse or IO error
 """
@@ -51,7 +59,12 @@ ARRAY_DEF_RE = re.compile(r"\bCommandEntry\s+(\w+)\s*\[\s*\]\s*[^=;{]*=\s*\{")
 SETTING_ARRAY_DEF_RE = re.compile(r"\bSettingEntry\s+(\w+)\s*\[\s*\]\s*[^=;{]*=\s*\{")
 MODULE_TABLE_RE = re.compile(r"\bgCommandModules\s*\[\s*\]\s*=\s*\{")
 STRING_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
-NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_\-]*$")
+# A registered name is one or more alphanumeric/underscore/hyphen tokens joined
+# by single spaces ("cm5", "cm5 power reboot"). Leading, trailing or doubled
+# spaces never occur in CommandEntry rows and are rejected. Only CommandEntry
+# arrays are scanned, so string tables elsewhere ("1 hour", "automation add ")
+# are never candidates.
+NAME_RE = re.compile(r"[A-Za-z0-9_\-]+(?: [A-Za-z0-9_\-]+)*$")
 SETTINGS_SUFFIX_RE = re.compile(r"(Settings?|Setting)(Entry|Entries)$")
 
 SRC_SUFFIXES = {".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"}
@@ -61,7 +74,9 @@ NUMERIC_TYPES = {
     "SETTING_INT", "SETTING_U8", "SETTING_U16", "SETTING_U32",
     "SETTING_I32", "SETTING_FLOAT",
 }
-AUDIT_RANGE_RE = re.compile(r"(-?\d+)\s*(?:\.\.|[-–—])\s*(-?\d+)")
+# A stated range in help/usage text: "1-13", "0..1200", "0x70..0x77".
+_AUDIT_NUM = r"-?(?:0[xX][0-9A-Fa-f]+|\d+)"
+AUDIT_RANGE_RE = re.compile(rf"({_AUDIT_NUM})\s*(?:\.\.|[-–—])\s*({_AUDIT_NUM})")
 AUDIT_CHOICE_RE = re.compile(r"[<\[]\s*([0-9]+(?:\s*\|\s*[0-9]+)+)\s*[>\]]")
 
 
@@ -211,11 +226,12 @@ def _parse_command(body):
         "name": name,
         "help": (_as_str(f[1]) if len(f) > 1 else "") or "",
         "admin": len(f) > 2 and f[2].strip() == "true",
-        # CommandEntry has two constructor shapes. In both, super-admin is a
-        # trailing, defaulted bool: field 8 for two-level voice metadata or
-        # field 9 for three-level metadata. Existing voice fields are strings
-        # or nullptr, so a trailing literal true is unambiguous.
-        "superadmin": len(f) >= 8 and f[-1].strip() == "true",
+        # CommandEntry (System_Utils.h) is { name, help, requiresAdmin, handler,
+        # usage = nullptr, requiresSuperAdmin = false }. Super admin is the
+        # sixth field, written as `/*requiresSuperAdmin=*/true`; _split_fields
+        # drops the comment, leaving the literal. A string in that slot is a
+        # compile error in the firmware, so a literal true is unambiguous.
+        "superadmin": len(f) > 5 and f[5].strip() == "true",
         "usage": _as_str(f[4]) if len(f) > 4 else None,
     }
 
@@ -493,14 +509,30 @@ def _emit_module_row(row_text, cond, modules, warnings):
     })
 
 
-def _join_settings(modules, settings, warnings):
-    """Attach each setting to its CLI command (cmdKey, else jsonKey, else area+key).
+def _resolve_prefix(tokens, by_lower):
+    """Mimic the firmware's longest-prefix lookup over whitespace-split tokens:
+    the registered name made of the most leading tokens wins ("cm5 power" over
+    "cm5"). Returns (entry, tokens_consumed) or (None, 0)."""
+    for n in range(len(tokens), 0, -1):
+        hit = by_lower.get(" ".join(tokens[:n]))
+        if hit is not None:
+            return hit, n
+    return None, 0
 
-    Some settings intentionally use a dispatcher plus subcommand as cmdKey
-    (`power mode`, `sensorlog interval`). Those are valid because firmware
-    lookup is longest-prefix. Keep the full editor command in the settings
-    catalog, but do not attach it as a one-to-one annotation on the base
-    dispatcher: several settings may share that single registry entry.
+
+def _join_settings(modules, settings, warnings):
+    """Attach each setting to its CLI command.
+
+    The OLED/web editor sends "<cmdKey-or-key> <value>" and the firmware
+    resolves that line by longest registered prefix. A candidate (cmdKey, else
+    jsonKey, else area+key) that is itself a registered name, with or without
+    spaces ("matrixaddress", "cm5 power"), is a one-to-one link: the setting's
+    type/range/default annotate that command row. A cmdKey that only resolves
+    through a shorter registered prefix ("power mode" via the "power"
+    dispatcher, "sensorlog interval" via "sensorlog") still counts as linked
+    and keeps the full editor command in the settings catalog, with the
+    dispatcher recorded as `via`, but is not attached to the dispatcher row:
+    several settings share that single registry entry.
     """
     by_lower = {}
     for mod in modules:
@@ -508,8 +540,9 @@ def _join_settings(modules, settings, warnings):
             by_lower.setdefault(c["name"].lower(), c)
     matched = 0
     for s in settings:
-        candidates = [s["cmdKey"], s["key"], f"{s['area']}{s['key']}"]
-        hit = next((by_lower[c.lower()] for c in candidates if c and c.lower() in by_lower), None)
+        s["via"] = None
+        candidates = [c for c in (s["cmdKey"], s["key"], f"{s['area']}{s['key']}") if c]
+        hit = next((by_lower[c.lower()] for c in candidates if c.lower() in by_lower), None)
         if hit is not None:
             if "setting" in hit:
                 warnings.append(f"setting collision on command '{hit['name']}' ({s['key']})")
@@ -518,18 +551,20 @@ def _join_settings(modules, settings, warnings):
             hit["setting"] = s
             s["command"] = hit["name"]
             matched += 1
-        elif s["cmdKey"] and " " in s["cmdKey"]:
-            base = s["cmdKey"].split(None, 1)[0].lower()
-            if base in by_lower:
-                s["command"] = s["cmdKey"]
-                matched += 1
-            else:
-                s["command"] = None
+            continue
+        editor = s["cmdKey"] or s["key"]
+        toks = editor.lower().split()
+        via, used = _resolve_prefix(toks, by_lower)
+        if via is not None and used < len(toks):
+            s["command"] = " ".join(editor.split())
+            s["via"] = via["name"]
+            matched += 1
         else:
             s["command"] = None
     return {
         "commands": len({c["name"].lower() for m in modules for c in m["commands"]}),
         "registry_entries": sum(len(m["commands"]) for m in modules),
+        "multi_word_names": len({c["name"].lower() for m in modules for c in m["commands"] if " " in c["name"]}),
         "modules": len(modules),
         "settings": len(settings),
         "settings_matched": matched,
@@ -619,7 +654,9 @@ def render_commands(modules, commit, stats):
             "is not defined is absent entirely — run `features` on the device for live "
             "`[ON]`/`[OFF]`/`[N/C]` state. Lookup is case-insensitive and uses longest-prefix "
             "matching, so both single-word commands and dispatcher forms such as "
-            "`automation list` are valid. Privileged commands are marked *(admin)* or "
+            "`automation list` are valid. A registered name can itself contain spaces "
+            "(`cm5 power reboot`); such rows are listed like any other command and win over "
+            "their shorter prefixes. Privileged commands are marked *(admin)* or "
             "*(super admin)*. Commands "
             "backed by a stored setting show their value type / range / default / options; see "
             "[`settings.generated.md`](settings.generated.md) for the full configuration view. "
@@ -665,17 +702,27 @@ def render_settings(settings, commit, stats):
         out += ["", f"### {area}", ""]
         for s in sorted(by_area[area], key=lambda x: x["key"]):
             label = s["label"] or s["key"]
-            cmd = f"`{s['command']}`" if s["command"] else f"`{s['cmdKey'] or s['key']}` _(no distinct command)_"
+            if s["command"]:
+                cmd = f"`{s['command']}`" + (f" (via `{s['via']}`)" if s.get("via") else "")
+            else:
+                cmd = f"`{s['cmdKey'] or s['key']}` _(no distinct command)_"
             out.append(f"- **{label}** (`{s['key']}`) — {_setting_annotation(s)} · command {cmd}")
     out.append("")
     return "\n".join(out)
 
 
 def _as_int(x):
+    """Integer value of a help-text number or C literal: decimal or 0x hex,
+    optional sign, any u/l suffix ignored ("119", "0x77", "1000UL", "-1")."""
+    s = str(x).strip().lower().rstrip("ul")
+    neg = s.startswith("-")
+    if neg:
+        s = s[1:]
     try:
-        return int(str(x), 0)  # base 0 → handles "1023" and "0x3FF" alike
-    except (ValueError, TypeError):
+        v = int(s[2:], 16) if s.startswith("0x") else int(s, 10)
+    except ValueError:
         return None
+    return -v if neg else v
 
 
 def render_audit(modules, settings, commit):
@@ -685,13 +732,14 @@ def render_audit(modules, settings, commit):
     out = [f"HardwareOne metadata audit  ·  firmware {commit or 'unknown'}", ""]
 
     # [A] settings whose UI editor would run a command that isn't registered.
-    cmd_lower = {n.lower() for n in all_cmd}
+    by_lower = {c["name"].lower(): c for m in modules for c in m["commands"]}
 
     def _editor_cmd_works(s):
-        # The editor sends "<cmdKey-or-key> <value>"; a subcommand form like
-        # "sensorlog autostart" works as long as its FIRST token is a real command.
-        toks = (s["cmdKey"] or s["key"]).split()
-        return bool(toks) and toks[0].lower() in cmd_lower
+        # The editor sends "<cmdKey-or-key> <value>"; the firmware resolves it by
+        # longest registered prefix, so "sensorlog autostart" works through
+        # "sensorlog" and "cm5 power" through its own row.
+        toks = (s["cmdKey"] or s["key"]).lower().split()
+        return _resolve_prefix(toks, by_lower)[0] is not None
 
     orphans = [s for s in settings if s["command"] is None and not _editor_cmd_works(s)]
     out.append(f"[A] {len(orphans)} setting(s) whose editor command is NOT a registered command")
@@ -772,9 +820,10 @@ def _write_or_check(path: Path, text: str, check: bool, quiet: bool):
 
 
 def main(argv=None):
-    default_fw = os.environ.get("HW1_FIRMWARE") or str((SKILL_ROOT / ".." / "hardwareone-idf").resolve())
+    default_fw = os.environ.get("HW1_FIRMWARE") or str((SKILL_ROOT / ".." / "HardwareOne").resolve())
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--firmware", default=default_fw)
+    ap.add_argument("--firmware", default=default_fw,
+                    help="HardwareOne firmware checkout (default: $HW1_FIRMWARE or ../HardwareOne)")
     ap.add_argument("--output", default=str(SKILL_ROOT / "references" / "cli-commands.generated.md"))
     ap.add_argument("--settings-output", default=str(SKILL_ROOT / "references" / "settings.generated.md"))
     ap.add_argument("--json", default=None, help="also write a combined machine-readable catalog")
@@ -800,7 +849,7 @@ def main(argv=None):
         print(f"firmware : {firmware}  (commit {commit or 'unknown'})")
         print(f"modules  : {stats['modules']}")
         print(f"commands : {stats['commands']} unique / {stats['registry_entries']} registry entries  "
-              f"({stats['with_usage']} with usage syntax)")
+              f"({stats['with_usage']} with usage syntax, {stats['multi_word_names']} multi-word names)")
         print(f"settings : {stats['settings']}  ({stats['settings_matched']} linked, "
               f"{stats['settings_orphan']} unlinked)")
         for w in warnings:

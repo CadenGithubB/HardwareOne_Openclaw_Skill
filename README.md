@@ -1,9 +1,9 @@
 # HardwareOne — OpenClaw integration
 
-**Version 1.7.0**
+**Version 1.8.0**
 
 Lets an [OpenClaw](https://github.com/openclaw/openclaw) agent monitor and control a
-[HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 device.
+[HardwareOne](https://github.com/CadenGithubB/HardwareOne) ESP32 device.
 
 The OpenClaw agent runs in a sandbox with **no network**, so it can't reach the device
 directly. Instead this ships in two cooperating halves:
@@ -18,7 +18,9 @@ Agent (sandbox, no network) ──tool call──▶ Gateway plugin (host) ─�
 - **Skill** (`SKILL.md`, `references/`) — tells the agent how to use those tools and
   which commands exist.
 - **Wrapper** (`scripts/hw1.sh`) — what the plugin shells out to on the host; handles
-  auth, timeouts, and TLS, and talks to the device over HTTP(S).
+  auth, timeouts, and TLS, and talks to the device over HTTP(S). Its exit code tells the
+  plugin what happened: 0 ok, 1 transport or configuration error, 3 the device executed
+  the request and rejected the command (stdout is the device's own text), 7 unreachable.
 
 The command and settings references are **generated from the firmware** by
 `tools/sync_command_reference.py`, so they stay accurate as the firmware evolves.
@@ -32,7 +34,7 @@ A user can ask, “Create a daily device-status automation for 7 AM.” The agen
 3. Confirms the stored schedule with `automation list` instead of assuming that an
    accepted command completed correctly.
 
-The same pattern applies to sensor readings, settings, mesh peers, health capture, and
+The same pattern applies to sensor readings, settings, mesh peers, health logging, and
 wearable controls: discover the registered command, execute it through the gateway, and
 verify the subsystem-specific result.
 
@@ -103,13 +105,17 @@ verify the subsystem-specific result.
 python3 tools/sync_command_reference.py            # regenerate the catalogs
 python3 tools/sync_command_reference.py --audit    # report metadata gaps
 python3 tools/sync_command_reference.py --check    # CI: exit 1 if the catalogs are stale
-python3 ../hardwareone-idf/tools/command_registry.py audit  # firmware registry drift
+python3 ../HardwareOne/tools/command_registry.py audit     # the firmware's own registry audit
 ```
 
 Point it at your firmware checkout with `--firmware <path>` or `$HW1_FIRMWARE`
-(default `../hardwareone-idf`). The generated header records the clean firmware
+(default `../HardwareOne`). The generated header records the clean firmware
 revision, or a content-hashed `+dirty` source snapshot when scanned source files are
-uncommitted. See [tools/README.md](tools/README.md).
+uncommitted. The firmware repository ships its own `tools/command_registry.py`:
+`reference` writes its `docs/COMMAND_REFERENCE.md` and `audit` reports duplicate
+names, unregistered arrays, and setting `cmdKey`s bound to no command (exit 1 on
+problems). Run both audits after a firmware change; the firmware audit's findings are
+firmware issues, which this generator reports as-is. See [tools/README.md](tools/README.md).
 
 ## Configuration (`.env`)
 
@@ -119,7 +125,7 @@ uncommitted. See [tools/README.md](tools/README.md).
 | `HW1_USER` / `HW1_PASS` | Device credentials. |
 | `HW1_ALLOW_HTTP=1` | Permit a bare IP/host to try HTTP only after HTTPS connection refusal. Prefer an explicit `http://` URL for intentional plaintext HTTP. |
 | `HW1_ALLOW_SELF_SIGNED=1` or `HW1_CACERT=<path>` | Disable TLS verification on a trusted LAN, or verify with a host-side CA/certificate PEM (preferred). Neither setting permits HTTP. `HW1_INSECURE=1` remains a legacy alias. |
-| `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). |
+| `HW1_TIMEOUT`, `HW1_CONNECT_TIMEOUT`, `HW1_TIMEOUT_LONG` | curl timeouts in seconds (optional). The gateway waits `HW1_TIMEOUT_LONG` plus `HW1_TIMEOUT` for the slow commands (`llmgenerate`, `llmload`, `llmask`, `opencamera`, `certgen`, `c6update`, `otastage`, `otaupdate`, `stt`; matched on the first word) and `HW1_TIMEOUT` (default 30 s) for everything else. |
 
 Credentials live only on the host and are never mounted into the sandbox.
 
@@ -127,14 +133,14 @@ Credentials live only on the host and are never mounted into the sandbox.
 
 - The agent's sandbox has **no network** (`NetworkMode: none`); the gateway tools
   are the only path to the device — the same pattern OpenClaw uses for web search.
-- Tool inputs are length-capped and validated — control characters rejected, device names restricted to a safe charset.
+- Tool inputs are length-capped and validated — printable ASCII only (control and non-ASCII characters rejected), device names restricted to a safe charset.
 - The plugin `spawn`s the wrapper with an argv array — **never a shell** — so command
   arguments can't be shell-interpreted on the host.
 - Device credentials stay host-side; nothing privileged crosses the sandbox boundary.
 
 ## Credits
 
-- Firmware: [HardwareOne](https://github.com/CadenGithubB/hardwareone-idf) ESP32 platform.
+- Firmware: [HardwareOne](https://github.com/CadenGithubB/HardwareOne) ESP32 platform.
 - Runs as an [OpenClaw](https://github.com/openclaw/openclaw) skill + gateway plugin.
 
 ## License

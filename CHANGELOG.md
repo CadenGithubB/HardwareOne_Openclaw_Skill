@@ -5,6 +5,158 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-10-05
+
+Catch-up with eleven firmware releases. The skill was last synced to HardwareOne
+v0.99.7; this release regenerates everything from v0.99.96 plus unreleased work
+(`a172013`) and teaches the agent the subsystems that arrived in between: signed OTA,
+the ESP32-C6 radio companion, the Raspberry Pi co-processor, a backend-selectable
+LLM, local speech-to-text, the LED matrix, multi-hop mesh routing, session epochs,
+and inline `confirm` words. The firmware repository was renamed from
+`hardwareone-idf` to `HardwareOne`.
+
+### Added
+- Firmware 0.99.8 through 0.99.96 plus unreleased work (`a172013`) command coverage:
+  eight new modules (`c6`, `ota`, `cm5`, `stt`, `transcription`, `health`, `matrix`,
+  `liveaudio`; `c6` is post-0.99.96), 55 commands and 22 settings. `SKILL.md` gains
+  recipes for the signed OTA lifecycle, the radio companion, the Pi co-processor,
+  local STT and transcription, the LED matrix, multi-hop mesh routing, `power json`,
+  and the new `Firmware & OTA` and `Radio companion` event families.
+- Sessions and identity guidance: every transport carries a session epoch, a refusal
+  ending `before command execution.` is retried once, `whoami` reports the account
+  name, an `(admin)` marker and the transport, and `guest` is a real view-only role
+  that the web server refuses before any command runs, so nothing (not even `whoami`)
+  works through the gateway for it.
+- Confirmation-prompt guidance: the gateway is a machine transport that can neither
+  open nor answer interactive yes/no prompts, so the agent uses the inline `confirm`
+  word where the catalog shows one and otherwise reports that a human session is
+  needed. The plugin README carries the same gotcha.
+- `references/api-reference.md` sections for sessions and epochs, confirmation and
+  machine transports, signed OTA, the radio companion, the Pi co-processor, local STT
+  and transcription, the LED matrix, power, and WiFi radio ownership. "Delivery is not
+  completion" now lists the queued operations (`ringscan`/`ringconnect` →
+  `ringstatus`, `g2recover` → `g2status`, OTA and ring writes answering with a
+  transaction handle, `cm5 power`/`cm5 fan` requests, `stt` sessions).
+- Wrapper exit-code contract: 0 ok; 1 transport or configuration error; 3 the device
+  executed the request and rejected the command, with stdout holding exactly the
+  device's own diagnostic text; 7 device unreachable (the plugin fails over on it).
+  A CLI command fails over on exit 7 alone: the wrapper exits 7 only from its pre-login
+  probe, so a transport error after that (exit 1) may mean the command already reached
+  the master, and it is never re-run on the backup. The read-only ping still fails over
+  on the wrapper's transport-error wording.
+  A malformed `HW1_URL` (unsupported scheme, no host, a path or query) now exits 1
+  instead of 7, so a configuration typo never triggers failover; a refused
+  connection or a probe that did not answer as a HardwareOne device still exits 7.
+  Documented in the wrapper header, its usage text, the plugin README, and the root
+  README. A 401 on a command earns exactly one re-login and one retry; a second 401
+  exits 1 with the device's own text instead of logging in a third time.
+- Plugin unit tests (`plugin/hardwareone-tool.test.js`, run with `node --test`) for
+  the input cap and the non-ASCII refusal, exit-3 pass-through, the mesh relay
+  surfacing a master's rejection, the slow-command spawn timeout, the mesh frame
+  cap, and the camera reporting `opencamera`'s own refusal; the wrapper transport
+  suite grows to 138 assertions covering 200, 400, 401-then-200, persistent 401,
+  403, 429, 500, the exit-1 versus exit-7 split, and the slow-command timeout list
+  in every spelling the firmware accepts.
+- The plugin now waits as long as the wrapper does: `hardwareone_cli` spawns the
+  wrapper under the device's `timeout` / `HW1_TIMEOUT` (default 30 s) for an ordinary
+  command and, for the same first-word list the wrapper uses (`llmgenerate`,
+  `llmload`, `llmask`, `opencamera`, `certgen`, `c6update`, `otastage`, `otaupdate`,
+  `stt`), under the device's `timeoutLong` / `HW1_TIMEOUT_LONG` (default 300 s) plus
+  that per-request cap as grace for the probe and a re-login, instead of killing every
+  call at a fixed 30 s before the wrapper's own cap could matter. The caps and the
+  `Error: hardwareone timeout after <N>ms` text are documented in the plugin README,
+  the templates and the skill's error table. `details.timeoutMs` reports the cap a
+  call ran under.
+- The wrapper lower-cases the slow-command first word with `tr`, so `hw1.sh` still runs
+  under the bash 3.2 that macOS ships (`${var,,}` needs bash 4).
+- A command relayed to a mesh device is refused up front, with the limit named, when
+  `user:pass:cmd` cannot fit the master's 217-byte `espnowremote` payload (a payload
+  over one frame's 202 plaintext bytes goes out as an encrypted multi-fragment
+  message), rather than after a wrapper round trip to the master's own "too long"
+  text. The refusal names the command's own length only, never the credential-derived
+  byte total. The tool descriptions and `SKILL.md` say mesh commands stay under roughly
+  190 characters.
+- `hardwareone_camera` keeps the result of its automatic `opencamera` and reports the
+  device's own reason (`Camera is disabled`, `Camera initialization failed`, a role
+  error) instead of a generic "not started, retry with ensureOn" message.
+- Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,
+  pre-login endpoint recognition, and curl isolation.
+- The generator understands registered names that contain spaces (the 14 `cm5 ...`
+  rows render as their own commands and count in the header totals), resolves a
+  dispatcher-style setting `cmdKey` through the same longest-prefix rule the firmware
+  uses (rendered as ``command `power mode` (via `power`)``), and parses hexadecimal
+  range bounds so `matrixaddress 0x70..0x77` audits cleanly.
+
+### Changed
+- Regenerated the exhaustive references from HardwareOne v0.99.96 plus unreleased
+  work (`a172013`): 963 unique command names, 966 registry entries across 52 modules,
+  and 304 persisted settings (289 linked to registered commands or dispatcher forms).
+  Removed from the catalog: `espnowmeshadaptivettl`, `espnowmeshsave`, `g2pet`,
+  `healthtrack` (now `healthlogging`), `ringverbose` (now `debugringdump`); `dictate`
+  is no longer a CLI command. Compile guards: `llm` is `ENABLE_LLM_BACKEND`,
+  `neopixel`/`led` are `ENABLE_NEOPIXEL`, `sd` is `ENABLE_SD_CARD`.
+- Argument limit raised to the firmware's `CMD_INPUT_MAX`: `hardwareone_cli` accepts
+  up to 2047 characters (was 512) and the skill says a longer command is rejected whole
+  by the device, never truncated.
+- Device rejections reach the agent as the device's own text with no `[exit N]`
+  prefix. `SKILL.md`'s error table keys on that text and adds rows for the session
+  epoch (`before command execution.`), radio busy errors from `closewifi` /
+  `wifidisconnect` / `radiopower off` / `openespnow`, the co-processor's
+  `host not present` / `host stale` / `host not ready`, queued replies, and
+  prompts that cannot be answered.
+- Mesh relay: a `via: "mesh"` device must be securely paired with the relaying master
+  (consent pairing or `espnowpairsecure`), because since firmware v0.99.9 a device
+  executes only session-encrypted ESP-NOW command frames from a paired peer. Stated in
+  `SKILL.md`, the operating reference, the tool descriptions, the plugin README, and
+  `hardwareone.devices.json.template`. The relay surfaces the master's own rejection
+  text instead of an offline verdict, and stops polling if the master rejects the
+  `espnowmessages` poll itself.
+- Settings batching guidance now documents what the firmware does: a `beginwrite`
+  issued through the gateway is owned by the web session's epoch, so it survives
+  across separate tool calls, values take effect in RAM at once, an idle batch is
+  flushed after about two minutes, and a session renewal starts a new scope. The agent
+  is told to keep batches short and read a setting back.
+- LLM guidance is backend-selectable: models are `<source>:<name>` (`onboard:...`,
+  `cm5:...`); which sources exist depends on the build (the developer default compiles
+  both, the Pocket Assistant profile has only the Pi source, the Headless profile has
+  no LLM), so the agent reads `llmmodels` / `features`; `Do:` mode exists only for an
+  on-board model that declares it.
+- `SKILL.md` intro counts, subsystem list, deployment profiles (Headless Node, Pocket
+  Assistant on the XIAO ESP32-S3 without MQTT/I2C/OLED/local input, P4X-EYE handheld)
+  and the `g2probe` / `g2imgprobe` test-suite caveat.
+- The wrapper's slow-command timeout list now covers `c6update`, `otastage`,
+  `otaupdate`, `llmask` and `stt` in addition to the LLM, camera and `certgen` cases,
+  and drops `camerastart`, which is not a registered command. The first word is
+  matched the way the firmware resolves it: case-insensitively and after leading
+  whitespace, so `OtaUpdate confirm` and `  stt start` get the long cap too.
+- `SKILL.md` and the operating reference state the gateway's real input rule
+  (printable ASCII only, so accents and emoji are refused as well as control
+  characters), list the gateway's own unprefixed `Error: ...` answers next to the
+  `[exit N]` transport prefix, and mark the input-check rows of the error table as
+  gateway-side rather than device text.
+- Corrections against the firmware source: `automation run id=<id>` (a name is not
+  accepted); `power json` reports the CPU clock steps, the five presets and the
+  `sleepAllowed` gate, not a list of sleep modes; the whole `g2glasses` command is
+  admin, `show` included; `otapin clear confirm` is no longer listed among the inline
+  confirm forms that work through the gateway; the `matrix` recipe adds `size` and
+  `panel`; the plugin README names consent pairing beside `espnowpairsecure`; the
+  session-epoch text no longer blames the gateway's web session, which the wrapper
+  renews on a 401 by itself.
+- Generator default `--firmware` path is `../HardwareOne`; every `hardwareone-idf`
+  link and path in the README, tools README and templates was updated.
+- `plugin/package.json` 1.7.0 → 1.8.0; the plugin README documents the exit codes,
+  the 2047-character cap, the mesh pairing requirement, and the tests.
+
+### Fixed
+- Super-admin detection in the generator had silently regressed to zero: since
+  firmware v0.99.89 `CommandEntry` has no voice fields, so the old "eight or more
+  fields, last is true" rule never fired. The parser now reads the
+  `requiresSuperAdmin` field by position; the catalog marks 25 unique super-admin
+  names again.
+- The `matrixaddress` audit false positive (help `0x70-0x77` read as `70-0`).
+- The wrapper printed a generic `Error: bad request (400)` and hid the device's
+  diagnostic for an unknown command or bad usage; it now passes the body through.
+
 ### Security
 - Pin explicit `http://` and `https://` device URLs to their configured scheme. Bare
   hosts now use HTTPS and can fall back to HTTP only after an HTTPS connection refusal
@@ -14,10 +166,33 @@ Notable changes to the HardwareOne OpenClaw skill. Versioning follows
   and timeouts never authorize an HTTP downgrade.
 - Isolate device requests from user curl configuration and ambient proxy variables,
   restrict curl to HTTP(S), and disable redirects.
+- None of the 84 pre-existing transport assertions changed, so the hardening above is
+  intact under the new exit-code contract.
 
-### Added
-- Focused fake-transport tests for scheme pinning, HTTP opt-in, downgrade resistance,
-  pre-login endpoint recognition, and curl isolation.
+### Known firmware audit findings
+- The skill's own audit reports 15 settings whose editor command is not a registered
+  command (seven at the v0.99.7 baseline; the eight new ones are the four `matrix*`
+  keys, the two `g2Device` desired-state keys and the two `sensorLog` ring keys),
+  including the four `matrix*` setting `cmdKey`s (`matrixbrightness`, `matrixpanel`,
+  `matrixrotation`, `matrixsquare`) that the firmware's own audit flags as bound to no
+  command; two range mismatches
+  (`cameramaxstoredimages` help `0-1200` vs setting `0-1000`; `espnowchannel` help
+  `1-13` vs setting `0-13`); and no enum-choice mismatches.
+- The firmware's `tools/command_registry.py audit` reports 16 problems: nine `ota*`
+  names registered twice because the stub table and the real table both parse, the
+  `espnowenabled` / `pendinglist` / `serialrequireauth` duplicates, and the four
+  `matrix*` `cmdKey`s above. The skill reports registry entries as-is; it does not
+  hide or modify firmware-owned metadata. Its 966 registry entries versus the firmware
+  tool's 975 come from keeping one parse per array variable (`otaCommands` is defined
+  under both `#if HW1_OTA_LAYOUT` and `#else` with the same nine names); the 963
+  unique names match the firmware's `docs/COMMAND_REFERENCE.md` exactly.
+- The firmware's `docs/COMMAND_REFERENCE.md` marks only 16 commands as super-admin;
+  nine more (`c6update`, `otaack`, `otacancel`, `otapin`, `otarecovery`,
+  `otaresetjournal`, `otastage`, `otaupdate`, `otawrite`) pass a bare `true` in the
+  sixth field that the firmware tool's regex does not recognise. The runtime gates on
+  that field, so the skill's catalog marks them super-admin.
+- The firmware's `tools/settings_registry.py` fails to import on Python 3.11 (a
+  backslash inside an f-string); a firmware-side issue.
 
 ## [1.7.0] — 2026-08-03
 

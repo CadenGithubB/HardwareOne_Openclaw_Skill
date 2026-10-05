@@ -3,7 +3,7 @@
 <!-- GENERATED FILE — DO NOT EDIT BY HAND.
      Regenerate with: tools/sync_command_reference.py -->
 
-> Firmware source `ee87ea7` · 285 settings · 278 linked to commands
+> Firmware source `a172013` · 304 settings · 289 linked to commands
 
 Every persisted setting, grouped by area. Each setting is read/written by the CLI command shown (its `cmdKey`, else its key). Ordinary setters persist immediately; use `beginwrite`, make several changes, then `savesettings` to batch one flash write. Values marked **secret** are encrypted on disk and never echoed; **read-only** values are device-managed (e.g. counters).
 
@@ -38,7 +38,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Secure Channel Secret** (`bleSecureChannelSecret`) — setting · string · default (hidden) · secret · command `blesecret`
 - **Auto-start at boot** (`bluetoothAutoStart`) — setting · bool · default off · command `bleautostart`
 - **Device Name** (`bluetoothDeviceName`) — setting · string · default "HardwareOne" · command `blename`
-- **Mode (0=server, 1=g2)** (`bluetoothMode`) — setting · enum · default 0 (Server) · options 0=Server, 1=Client (G2) · command `blemode`
+- **Mode (0=server, 1=g2)** (`bluetoothMode`) — setting · enum · default kBleModeDefaultForBuild · options 0=Server, 1=Client (G2) · command `blemode`
 - **Require Authentication** (`bluetoothRequireAuth`) — setting · bool · default on · command `blerequireauth`
 - **TX Power (0-7)** (`bluetoothTxPower`) — setting · int 0–7 · default 3 · command `bletxpower`
 
@@ -53,7 +53,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Contrast (-2 to 2)** (`cameraContrast`) — setting · int -2–2 · default 2 · command `cameracontrast`
 - **Denoise (0-8)** (`cameraDenoise`) — setting · int 0–8 · default 0 · command `cameradenoise`
 - **Enabled** (`cameraEnabled`) — setting · bool · default on · command `cameraenabled`
-- **Resolution** (`cameraFramesize`) — setting · enum · default 10 (240x240) · options 0=320x240 (QVGA), 1=640x480 (VGA), 2=800x600 (SVGA), 3=1024x768 (XGA), 4=1280x1024 (SXGA), 5=1600x1200 (UXGA), 6=96x96, 7=160x120 (QQVGA), 8=176x144 (QCIF), 9=240x176 (HQVGA), 10=240x240 · command `cameraframesize`
+- **Resolution** (`cameraFramesize`) — setting · enum · default 10 (240x240) · options 0=320x240 (QVGA), 1=640x480 (VGA), 2=800x600 (SVGA), 3=1024x768 (XGA), 4=1280x1024 (SXGA), 5=1600x1200 (UXGA), 6=96x96, 7=160x120 (QQVGA), 8=176x144 (QCIF), 9=240x176 (HQVGA), 10=240x240, 11=1280x720 (HD), 12=400x296 (CIF) · command `cameraframesize`
 - **Horizontal mirror** (`cameraHMirror`) — setting · bool · default off · command `camerahmirror`
 - **Max images (0=unlimited)** (`cameraMaxStoredImages`) — setting · int 0–1000 · default 100 · command `cameramaxstoredimages`
 - **JPEG quality (0-63, lower=better)** (`cameraQuality`) — setting · int 0–63 · default 12 · command `cameraquality`
@@ -72,6 +72,17 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 ### cli
 
 - **OLED History** (`oledHistorySize`) — setting · int 10–100 · default 50 · command `oledclihistorysize`
+
+### clock
+
+- **NTP Server** (`ntpServer`) — setting · string · default "pool.ntp.org" · command `ntpserver`
+- **Timezone** (`tzOffsetMinutes`) — setting · enum · default 0 (UTC+0 (London/GMT · Dublin)) · options -720=UTC-12 (Baker Island), -660=UTC-11 (Samoa), -600=UTC-10 (Hawaii/HST), -540=UTC-9 (Alaska/AKST), -480=UTC-8 (Pacific/PST), -420=UTC-7 (Mountain/MST · Pacific/PDT), -360=UTC-6 (Central/CST · Mountain/MDT), -300=UTC-5 (Eastern/EST · Central/CDT), -240=UTC-4 (Atlantic/AST · Eastern/EDT), -180=UTC-3 (Argentina · Atlantic/ADT), -120=UTC-2 (Mid-Atlantic), -60=UTC-1 (Azores), 0=UTC+0 (London/GMT · Dublin), 60=UTC+1 (Berlin/Paris/CET · London/BST), 120=UTC+2 (Cairo/Athens/EET · Paris/CEST), 180=UTC+3 (Moscow/Baghdad), 240=UTC+4 (Dubai/Baku), 300=UTC+5 (Karachi/Tashkent), 330=UTC+5:30 (Mumbai/Delhi/IST), 360=UTC+6 (Dhaka/Almaty), 420=UTC+7 (Bangkok/Jakarta), 480=UTC+8 (Beijing/Singapore), 540=UTC+9 (Tokyo/Seoul/JST), 570=UTC+9:30 (Adelaide/ACST), 600=UTC+10 (Sydney/AEST), 660=UTC+11 (Solomon Islands), 720=UTC+12 (Fiji/Auckland/NZST) · command `tzoffsetminutes`
+
+### companion
+
+- **Hold in reset while idle** (`c6AutoHold`) — setting · bool · default off · command `c6autohold`
+- **Auto-recover after an outage** (`c6AutoRecover`) — setting · bool · default on · command `c6autorecover`
+- **Heartbeat interval (s, 0=off)** (`c6HeartbeatSec`) — setting · int 0–60 · default 5 · command `c6heartbeat`
 
 ### crash
 
@@ -126,8 +137,8 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Heartbeat Interval (ms)** (`masterHeartbeatInterval`) — setting · int 1000–60000 · default 10000 · command `espnowheartbeatinterval`
 - **Master MAC** (`masterMAC`) — setting · string · default (empty) · command `espnowmeshmaster`
 - **Mesh Mode** (`mesh`) — setting · bool · default off · command `espnowmode`
-- **Adaptive TTL** (`meshAdaptiveTTL`) — setting · bool · default off · command `espnowmeshadaptivettl`
 - **Max Peer Slots (reboot)** (`meshPeerMax`) — setting · int 1–16 · default 8 · command `espnowmeshpeermax`
+- **Relay for peers** (`meshRelay`) — setting · bool · default on · command `espnowmeshrelay`
 - **Mesh Role** (`meshRole`) — setting · enum · default 0 (Worker) · options 0=Worker, 1=Master, 2=Backup Master · command `espnowmeshrole`
 - **TTL** (`meshTTL`) — setting · int 1–10 · default 3 · command `espnowmeshttl`
 - **Room** (`room`) — setting · string · default (empty) · command `espnowroom`
@@ -152,6 +163,11 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Auto-start after boot** (`fmRadioAutoStart`) — setting · bool · default off · command `fmradioautostart`
 - **Poll Interval (ms)** (`fmRadioDevicePollMs`) — setting · int 100–5000 · default 250 · command `fmradiodevicepollms`
 - **Enabled** (`fmRadioEnabled`) — setting · bool · default on · command `fmradioenabled`
+
+### g2Device
+
+- **HeadUp desired** (`headUpDesired`) — setting · enum · default 0 (Preserve) · options 0=Preserve, 1=Off, 2=On · read-only · command `headUpDesired` _(no distinct command)_
+- **Native notifications desired** (`notificationsDesired`) — setting · enum · default 0 (Preserve) · options 0=Preserve, 1=Off (unsupported), 2=On · read-only · command `notificationsDesired` _(no distinct command)_
 
 ### gps
 
@@ -247,9 +263,9 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 ### mic
 
 - **Enabled** (`micEnabled`) — setting · bool · default on · command `micenabled`
-- **Mic source** (`micSource`) — setting · string · default "auto" · command `micsource`
+- **Mic source** (`micSource`) — setting · enum · default "auto" · options auto|Auto, pdm|Onboard PDM, g2|G2 glasses · command `micsource`
 - **Auto-start after boot** (`microphoneAutoStart`) — setting · bool · default off · command `micautostart`
-- **Bit depth (cosmetic; WAV is always 16-bit)** (`microphoneBitDepth`) — setting · int 16–32 · default 16 · command `micbitdepth`
+- **Bit depth (cosmetic; WAV is always 16-bit)** (`microphoneBitDepth`) — setting · enum · default 16 (16-bit) · options 16=16-bit, 32=32-bit · command `micbitdepth`
 - **Software gain (%)** (`microphoneGain`) — setting · int 0–100 · default 70 · command `micgain`
 - **Sample rate (Hz, PDM only)** (`microphoneSampleRate`) — setting · int 8000–48000 · default 16000 · command `micsamplerate`
 
@@ -281,6 +297,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### notif
 
+- **Android app cards** (`notifApp`) — setting · bool · default on · command `notifydeviceapp`
 - **OLED banners** (`notifBanners`) — setting · bool · default on · command `notifydevicebanners`
 - **G2 lens cards** (`notifG2`) — setting · bool · default on · command `notifydeviceg2`
 - **Notification center** (`notifQueue`) — setting · bool · default on · command `notifydevicequeue`
@@ -308,14 +325,18 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **BLE Idle Logout (min, 0=off)** (`sessionIdleBle`) — setting · int 0–1440 · default 15 · command `sessionidleble`
 - **Display Idle Logout (min, 0=off)** (`sessionIdleDisplay`) — setting · int 0–1440 · default 60 · command `sessionidledisplay`
 - **Serial Idle Logout (min, 0=off)** (`sessionIdleSerial`) — setting · int 0–1440 · default 60 · command `sessionidleserial`
+- **UART Idle Logout (min, 0=off)** (`sessionIdleUart`) — setting · int 0–1440 · default 0 · command `sessionidleuart`
 - **Web Idle Logout (min, 0=off)** (`sessionIdleWeb`) — setting · int 0–1440 · default 60 · command `sessionidleweb`
+- **UART Link Baud (0=board default)** (`uartLinkBaud`) — setting · int 0–UART_LINK_BAUD_MAX · default 0 · command `uartlinkbaud`
+- **UART Link Enabled** (`uartLinkEnabled`) — setting · bool · default off · command `uartlink`
+- **UART Require Auth** (`uartRequireAuth`) — setting · bool · default on · command `uartrequireauth`
 
 ### power
 
-- **Auto Mode** (`autoMode`) — setting · bool · default off · command `power auto`
-- **Battery Threshold (%)** (`batteryThreshold`) — setting · int 0–100 · default 20 · command `power threshold`
+- **Auto Mode** (`autoMode`) — setting · bool · default off · command `power auto` (via `power`)
+- **Battery Threshold (%)** (`batteryThreshold`) — setting · int 0–100 · default 20 · command `power threshold` (via `power`)
 - **Display Dim Level (%)** (`displayDimLevel`) — setting · int 0–100 · default 30 · command `powerdim`
-- **Power Mode** (`mode`) — setting · enum · default 0 · options Performance, Balanced, PowerSaver, UltraSaver, Locked · command `power mode`
+- **Power Mode** (`mode`) — setting · enum · default 0 · options Performance, Balanced, PowerSaver, UltraSaver, Locked · command `power mode` (via `power`)
 - **Power saving (min, 0=disabled)** (`powerSaveMinutes`) — setting · int 0–1440 · default 10 · command `powersave`
 - **Sleep cooldown (ms, 0=disabled)** (`transitionCooldownMs`) — setting · int 0–60000 · default 5000 · command `powercooldown`
 
@@ -334,21 +355,36 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 ### sensorLog
 
 - **Capture at-rest encryption** (`captureEncryptMode`) — setting · enum · default 1 (Health) · options 0=Off, 1=Health, 2=All · command `capturecrypt`
-- **R1 Health poll interval (sec)** (`healthTrackPollIntervalSec`) — setting · int 60–86400 · default 900 · command `healthtrack interval`
-- **R1 Health Track** (`healthTrackingEnabled`) — setting · bool · default off · command `healthtrack`
-- **Auto-start logging after boot** (`sensorLogAutoStart`) — setting · bool · default off · command `sensorlog autostart`
+- **Health logging** (`healthLoggingEnabled`) — setting · bool · default off · command `healthlogging`
+- **Health logging poll interval (sec)** (`healthLoggingPollIntervalSec`) — setting · int 60–86400 · default 900 · command `healthlogging interval` (via `healthlogging`)
+- **Ring health collection desired** (`ringHealthCollectionDesired`) — setting · enum · default 0 (Preserve) · options 0=Preserve, 1=Off, 2=On · read-only · command `ringHealthCollectionDesired` _(no distinct command)_
+- **Ring low power desired** (`ringLowPowerDesired`) — setting · enum · default 0 (Preserve) · options 0=Preserve, 1=Off, 2=On · read-only · command `ringLowPowerDesired` _(no distinct command)_
+- **Auto-start logging after boot** (`sensorLogAutoStart`) — setting · bool · default off · command `sensorlog autostart` (via `sensorlog`)
 - **Enabled** (`sensorLogEnabled`) — setting · bool · default on · command `sensorlogenabled`
 - **Format** (`sensorLogFormat`) — setting · enum · default 0 (Text) · options 0=Text, 1=CSV, 2=Track · command `sensorlogformat`
-- **Poll interval (ms)** (`sensorLogIntervalMs`) — setting · int 100–3600000 · default 5000 · command `sensorlog interval`
+- **Poll interval (ms)** (`sensorLogIntervalMs`) — setting · int 100–3600000 · default 5000 · command `sensorlog interval` (via `sensorlog`)
 - **Sensors to log** (`sensorLogMask`) — setting · enum · default 0 · options bitmask:1|Thermal, ToF, IMU, Gamepad, APDS, GPS, Presence, R1 Health · command `sensorlogmask`
-- **Rotations (old logs to keep)** (`sensorLogMaxRotations`) — setting · int 0–9 · default 3 · command `sensorlog rotations`
-- **Max file size (bytes)** (`sensorLogMaxSize`) — setting · int 10240–10485760 · default 256000 · command `sensorlog maxsize`
+- **Rotations (old logs to keep)** (`sensorLogMaxRotations`) — setting · int 0–9 · default 3 · command `sensorlog rotations` (via `sensorlog`)
+- **Max file size (bytes)** (`sensorLogMaxSize`) — setting · int 10240–10485760 · default 256000 · command `sensorlog maxsize` (via `sensorlog`)
 - **Log file path** (`sensorLogPath`) — setting · string · default (empty) · command `sensorlogpath`
+
+### settings
+
+- **I2C address (reboot required)** (`matrixAddress`) — setting · enum · default 112 (0x70) · options 112=0x70, 113=0x71, 114=0x72, 115=0x73, 116=0x74, 117=0x75, 118=0x76, 119=0x77 · command `matrixaddress`
+- **Brightness (applied on next matrix command)** (`matrixBrightness`) — setting · int 0–15 · default 4 · command `matrixbrightness` _(no distinct command)_
+- **I2C bus (reboot required)** (`matrixBus`) — setting · enum · default 0 (I2C1) · options 0=I2C1, 1=I2C2 · command `matrixbus`
+- **8x8 square (next matrix command)** (`matrixPanel`) — setting · enum · default 0 (First square) · options 0=First square, 1=Second square · command `matrixpanel` _(no distinct command)_
+- **Rotation (applied on next matrix command)** (`matrixRotation`) — setting · enum · default 1 (16x8) · options 0=8x16, 1=16x8, 2=8x16 inverted, 3=16x8 inverted · command `matrixrotation` _(no distinct command)_
+- **Use one 8x8 square (next matrix command)** (`matrixSquare`) — setting · bool · default off · command `matrixsquare` _(no distinct command)_
+
+### stt
+
+- **Save STT transcripts** (`sttsavetranscripts`) — setting · bool · default off · command `sttsavetranscripts`
 
 ### systemLog
 
 - **Structured event history (events.log)** (`eventLog`) — setting · bool · default on · command `eventlog`
-- **Auto-start logging after boot** (`systemLogAutoStart`) — setting · bool · default off · command `log autostart`
+- **Auto-start logging after boot** (`systemLogAutoStart`) — setting · bool · default off · command `log autostart` (via `log`)
 - **Include category tags** (`systemLogCategoryTags`) — setting · bool · default on · command `logcategorytags`
 - **Enabled** (`systemLogEnabled`) — setting · bool · default on · command `systemlogenabled`
 - **Debug message categories** (`systemLogFlags`) — setting · string · default (empty) · command `systemlogflags`
@@ -369,7 +405,7 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 - **Rolling Alpha** (`thermalRollingMinMaxAlpha`) — setting · float · default 0.6 · command `thermalrollingminmaxalpha`
 - **Rolling Min/Max** (`thermalRollingMinMaxEnabled`) — setting · bool · default on · command `thermalrollingminmaxenabled`
 - **Guard Celsius** (`thermalRollingMinMaxGuardC`) — setting · float · default 0.3 · command `thermalrollingminmaxguardc`
-- **Rotation (0-3)** (`thermalRotation`) — setting · int 0–3 · default 0 · command `thermalrotation`
+- **Rotation** (`thermalRotation`) — setting · enum · default 0 (0°) · options 0=0°, 1=90°, 2=180°, 3=270° · command `thermalrotation`
 - **Target FPS** (`thermalTargetFps`) — setting · int 1–8 · default 8 · command `thermaltargetfps`
 - **Temporal Alpha** (`thermalTemporalAlpha`) — setting · float · default 0.5 · command `thermaltemporalalpha`
 - **Transition (ms)** (`thermalTransitionMs`) — setting · int 0–5000 · default 80 · command `thermaltransitionms`
@@ -389,8 +425,6 @@ Every persisted setting, grouped by area. Each setting is read/written by the CL
 
 ### wifi
 
-- **NTP Server** (`ntpServer`) — setting · string · default "pool.ntp.org" · command `ntpserver`
-- **Timezone** (`tzOffsetMinutes`) — setting · enum · default 0 (UTC+0 (London/GMT · Dublin)) · options -720=UTC-12 (Baker Island), -660=UTC-11 (Samoa), -600=UTC-10 (Hawaii/HST), -540=UTC-9 (Alaska/AKST), -480=UTC-8 (Pacific/PST), -420=UTC-7 (Mountain/MST · Pacific/PDT), -360=UTC-6 (Central/CST · Mountain/MDT), -300=UTC-5 (Eastern/EST · Central/CDT), -240=UTC-4 (Atlantic/AST · Eastern/EDT), -180=UTC-3 (Argentina · Atlantic/ADT), -120=UTC-2 (Mid-Atlantic), -60=UTC-1 (Azores), 0=UTC+0 (London/GMT · Dublin), 60=UTC+1 (Berlin/Paris/CET · London/BST), 120=UTC+2 (Cairo/Athens/EET · Paris/CEST), 180=UTC+3 (Moscow/Baghdad), 240=UTC+4 (Dubai/Baku), 300=UTC+5 (Karachi/Tashkent), 330=UTC+5:30 (Mumbai/Delhi/IST), 360=UTC+6 (Dhaka/Almaty), 420=UTC+7 (Bangkok/Jakarta), 480=UTC+8 (Beijing/Singapore), 540=UTC+9 (Tokyo/Seoul/JST), 570=UTC+9:30 (Adelaide/ACST), 600=UTC+10 (Sydney/AEST), 660=UTC+11 (Solomon Islands), 720=UTC+12 (Fiji/Auckland/NZST) · command `tzoffsetminutes`
 - **Auto-reconnect after drop** (`wifiAutoReconnect`) — setting · bool · default on · command `wifiautoreconnect`
 - **Connect at boot** (`wifiAutoStart`) — setting · bool · default on · command `wifiautostart`
 - **Enabled** (`wifiEnabled`) — setting · bool · default on · command `wifienabled`

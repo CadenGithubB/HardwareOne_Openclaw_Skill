@@ -146,6 +146,21 @@ unexpected-extra-data'
         ;;
 esac
 
+# Scripted /api/cli result. FAKE_CLI_STATUS is a comma-separated list of HTTP
+# status codes consumed one per /api/cli call (the last one repeats); FAKE_CLI_BODY
+# is the device's text body. Only applies once the transport mode itself succeeded.
+if [[ "$url" == */api/cli && -n "${FAKE_CLI_STATUS:-}" && "$exit_code" -eq 0 ]]; then
+    cli_calls=$(grep -c $'^URL\t.*/api/cli$' "$FAKE_CURL_LOG" || true)
+    IFS=',' read -r -a cli_statuses <<< "$FAKE_CLI_STATUS"
+    cli_index=$((cli_calls - 1))
+    if [[ "$cli_index" -ge "${#cli_statuses[@]}" ]]; then
+        cli_index=$(( ${#cli_statuses[@]} - 1 ))
+    fi
+    code="${cli_statuses[$cli_index]}"
+    content_type="text/plain"
+    body="${FAKE_CLI_BODY-}"
+fi
+
 if [[ -n "$max_filesize" && "${#body}" -gt "$max_filesize" ]]; then
     body="${body:0:max_filesize}"
     exit_code=63
