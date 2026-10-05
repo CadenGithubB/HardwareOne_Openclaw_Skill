@@ -15,16 +15,39 @@ const HW1_DEVICES_FILE =
   process.env.HW1_DEVICES_FILE || `${process.env.HOME}/.openclaw/hardwareone.devices.json`;
 const HW1_ENV = process.env.HW1_ENV || `${process.env.HOME}/.openclaw/hardwareone.env`;
 
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 30_000;            // hw1.sh's HW1_TIMEOUT default; a device's `timeout` overrides it (spawnTimeoutFor)
 const MAX_OUTPUT_BYTES = 64 * 1024;
 const RELAY_TIMEOUT_MS = 15_000;      // how long to poll for a mesh peer's async reply
 const RELAY_POLL_INTERVAL_MS = 800;   // gap between espnowmessages polls
 const MSG_CMD_RESULT = 6;             // espnowmessages `type` value for a remote-command result
 const IMAGE_MAX_B64_BYTES = 8 * 1024 * 1024; // base64 of a device image (frames are small; cap generously)
 const CAMERA_WARMUP_MS = 90_000;      // `opencamera` can block while the sensor powers up (~60s max)
+// Firmware command input limit (CMD_INPUT_MAX in System_CommandLimits.h). The device
+// rejects a longer command whole — it never truncates — so refuse it here with the limit named.
+const CMD_INPUT_MAX = 2047;
+// hw1.sh exit-code contract: 0 ok; 1 transport/config error; 3 the device executed the
+// request and REJECTED the command (stdout is the device's own diagnostic: "Unknown
+// command …", "Usage: …", "Error: … access required"); 7 device unreachable (failover).
+const EXIT_DEVICE_REJECTED = 3;
+// Slow commands. hw1.sh sends these with HW1_TIMEOUT_LONG (its do_cli keeps the same
+// first-token list, matched case-insensitively after trimming); the spawn kill timer
+// must outlive that curl cap, or the gateway cuts the command off while the device is
+// still flashing, recording or generating. The grace added on top covers the wrapper's
+// pre-login probe and a possible re-login, which run under HW1_TIMEOUT (spawnTimeoutFor).
+const LONG_CMDS = new Set(["llmgenerate", "llmload", "llmask", "opencamera", "certgen", "c6update", "otastage", "otaupdate", "stt"]);
+const LONG_TIMEOUT_DEFAULT_S = 300;   // hw1.sh's HW1_TIMEOUT_LONG default
+// A mesh relay's payload is "user:pass:cmd". The master packs it into a
+// ESPNOW_V4_MAX_PAYLOAD (218) buffer and refuses anything that does not fit 217 bytes
+// (System_ESPNow.cpp cmd_espnow_remote). A payload over the 202-byte single-frame
+// plaintext limit goes out as an encrypted multi-fragment message, which only needs the
+// active session espnowremote already requires. Refuse here with the limit named instead
+// of paying a wrapper round trip for the master's "command too long" text.
+const MESH_RELAY_PAYLOAD_MAX = 217;
 
 const SAFE_CLI_RE = /^[\x20-\x7E]+$/;
 const SAFE_DEVICE_RE = /^[A-Za-z0-9_-]{1,40}$/;
+// The wrapper's transport-error wording (report_curl_failure). Only the read-only --ping
+// path fails over on it: a CLI command fails over on exit 7 alone (see runOnDevice).
 const UNREACHABLE_RE = /could not reach|connection refused|timed out|resolve host|TLS\/certificate/i;
 
 const truthy = (v) => v === true || v === 1 || v === "1" || v === "true";
@@ -239,13 +262,51 @@ function runHw1(device, argv, opts = {}) {
     proc.on("error", (err) => { clearTimeout(timer); rejectPromise(err); });
     proc.on("close", (code) => {
       clearTimeout(timer);
-      resolvePromise({ exitCode: code, stdout, stderr, truncated });
+      // timeoutMs is the kill timer this spawn actually ran under; formatResult reports
+      // it in details so the unit tests can see the slow-command cap reach the spawn.
+      resolvePromise({ exitCode: code, stdout, stderr, truncated, timeoutMs });
     });
   });
 }
 
+// Spawn timeout for one CLI command on one device. The base is the device's `timeout`
+// (hw1.sh's HW1_TIMEOUT, default 30 s): runHw1 hands that same value to the wrapper,
+// which runs the pre-login probe, a login and every ordinary request under it, so the
+// kill timer must not expire before curl's own cap does. A slow command gets the
+// device's timeoutLong (HW1_TIMEOUT_LONG, default 300 s) plus that base as grace for
+// the probe and one re-login. Exported for the unit tests.
+export function spawnTimeoutFor(device, command) {
+  const reqS = Number(device && device.timeout);
+  const base = Number.isFinite(reqS) && reqS > 0 ? reqS * 1000 : TIMEOUT_MS;
+  const first = String(command).trimStart().split(/\s+/, 1)[0].toLowerCase();
+  if (!LONG_CMDS.has(first)) return base;
+  const longS = Number(device && device.timeoutLong);
+  const capS = Number.isFinite(longS) && longS > 0 ? longS : LONG_TIMEOUT_DEFAULT_S;
+  return capS * 1000 + base;
+}
+
+// Exit 7 is the wrapper's "never verified a HardwareOne endpoint" code, produced only by
+// its pre-login probe. The stderr match covers the same transport errors after login
+// (curl 6/7/28/52/56 inside do_get or do_cli, exit 1), when the request may already
+// have reached the device.
 function isUnreachable(res) {
   return res.exitCode === 7 || (res.stderr && UNREACHABLE_RE.test(res.stderr));
+}
+
+// Exit 3: the device answered and rejected the command. It is NOT unreachable (the
+// wrapper's exit-3 stderr is a fixed "Device rejected the command" note that never
+// matches UNREACHABLE_RE), and stdout already is the device's diagnostic.
+function deviceRejected(res) {
+  return res.exitCode === EXIT_DEVICE_REJECTED;
+}
+
+// Agent-facing text for a wrapper result. On exit 3 return only stdout (the device's own
+// words) so the wrapper's "see stdout" stderr note is not pasted after it; otherwise
+// stdout+stderr combined, as the relay paths have always shown.
+function deviceText(res) {
+  const out = (res.stdout || "").trim();
+  if (deviceRejected(res)) return out || (res.stderr || "").trim();
+  return (out + (res.stderr || "")).trim();
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -281,6 +342,9 @@ async function pollMeshResult(master, mac, reqId) {
     let page;
     try { page = await runHw1(master, [`espnowmessages json ${cursor}${macArg}`]); }
     catch { await sleep(RELAY_POLL_INTERVAL_MS); continue; }
+    // the master rejected the poll itself (bad usage, role) — no reply will ever parse
+    // out of that, so stop polling and hand back the device's text instead of timing out.
+    if (deviceRejected(page)) return { rejected: deviceText(page) || "(no output)" };
     const parsed = extractJson(page.stdout || "");
     const msgs = parsed && Array.isArray(parsed.messages) ? parsed.messages : [];
     let advanced = false;
@@ -311,19 +375,38 @@ async function relayMeshCommand(registry, peer, command) {
   if (/\s/.test(peer.user) || /\s/.test(peer.pass)) {
     return errorResult(`mesh device '${peer.name}' has whitespace in its credentials; espnowremote can't pass those — set space-free user/pass in the registry`);
   }
+  // "user:pass:cmd" must fit the master's relay payload. (Once it does, the full
+  // espnowremote line is a few hundred bytes at most, so it is always under CMD_INPUT_MAX
+  // as well.) The message names the command's own length only: the byte total would
+  // hand the agent the combined length of the peer's user and password.
+  const payloadLen = peer.user.length + peer.pass.length + command.length + 2;
+  if (payloadLen > MESH_RELAY_PAYLOAD_MAX) {
+    return errorResult(`mesh relay to '${peer.name}' is limited to the master's ${MESH_RELAY_PAYLOAD_MAX}-byte relay payload, which must hold the peer's user, password and the command together: this command is ${command.length} characters and does not fit with this peer's credentials. Shorten the command or split it; the 2047-character limit applies to direct devices only.`);
+  }
   let res;
   try { res = await runHw1(master, [`espnowremote ${peer.name} ${peer.user} ${peer.pass} ${command}`]); }
   catch (err) { return errorResult(`relay to '${peer.name}' via '${master.name}' failed: ${String(err && err.message ? err.message : err)}`); }
-  const out = ((res.stdout || "") + (res.stderr || "")).trim();
+  const out = deviceText(res);
   const tag = `[via ${master.name} → ${peer.name}] `;
-  const reqIdMatch = out.match(/reqId\s+(\d+)/i);
+  const reqIdMatch = res.exitCode === 0 ? out.match(/reqId\s+(\d+)/i) : null;
   if (res.exitCode !== 0 || !reqIdMatch) {
-    // dispatch failed (not paired, encryption off, bad usage, self-target, …) — surface it
-    return { content: [{ type: "text", text: tag + (out || "(no output)") }], details: { device: peer.name, via: "mesh", relay: master.name, dispatchFailed: true } };
+    // dispatch failed — surface the master's own words. The master REJECTING espnowremote
+    // (peer not found or not paired, encryption off, bad usage, self-target, or the relay
+    // account lacks admin) comes back either as exit 3 or, for refusals whose text does not
+    // start with "Error", as exit 0 with no reqId; `out` already is that diagnostic,
+    // unprefixed, and the master is plainly reachable. Any other non-zero exit is a
+    // transport/config failure from the wrapper (its stderr explains).
+    return {
+      content: [{ type: "text", text: tag + (out || "(no output)") }],
+      details: { device: peer.name, via: "mesh", relay: master.name, dispatchFailed: true, exitCode: res.exitCode, rejected: deviceRejected(res) || undefined },
+    };
   }
   const reqId = Number(reqIdMatch[1]);
   const macMatch = out.match(/\b([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})\b/);
   const result = await pollMeshResult(master, macMatch ? macMatch[1] : "", reqId);
+  if (result.rejected) {
+    return { content: [{ type: "text", text: tag + `delivered (reqId ${reqId}), but the master rejected the reply poll: ${result.rejected}` }], details: { device: peer.name, via: "mesh", relay: master.name, reqId, rejected: true } };
+  }
   if (result.timedOut) {
     return { content: [{ type: "text", text: tag + `delivered, but no reply within ${RELAY_TIMEOUT_MS / 1000}s — the peer may be offline, out of range, or the command produced no output.` }], details: { device: peer.name, via: "mesh", relay: master.name, timedOut: true } };
   }
@@ -336,8 +419,10 @@ async function relayMeshProbe(registry, peer) {
   if (!master) return errorResult(`cannot reach mesh device '${peer.name}': no direct master to relay through`);
   try {
     const r = await runHw1(master, [`espnowprobe ${peer.name}`]);
-    const out = ((r.stdout || "") + (r.stderr || "")).trim() || "(no output)";
-    return { content: [{ type: "text", text: `[via ${master.name} → ${peer.name}] ${out}` }], details: { device: peer.name, via: "mesh", relay: master.name } };
+    // exit 3 = the master rejected the probe command itself (usage/role); its stdout is the
+    // diagnostic. That says nothing about the peer's reachability, so pass it through as-is.
+    const out = deviceText(r) || "(no output)";
+    return { content: [{ type: "text", text: `[via ${master.name} → ${peer.name}] ${out}` }], details: { device: peer.name, via: "mesh", relay: master.name, exitCode: r.exitCode, rejected: deviceRejected(r) || undefined } };
   } catch (err) { return errorResult(String(err && err.message ? err.message : err)); }
 }
 
@@ -372,15 +457,26 @@ async function runOnDevice(requestedDevice, argv) {
     allowFailover = device.role === "master";
   }
 
+  // a single CLI command (not a --flag) may be a slow one: give the wrapper the same
+  // long cap it gives curl, per device, so the backup re-run honours its own timeoutLong.
+  const isCli = argv.length === 1 && !argv[0].startsWith("--");
+  const optsFor = (d) => (isCli ? { timeoutMs: spawnTimeoutFor(d, argv[0]) } : {});
+
   let res;
-  try { res = await runHw1(device, argv); }
+  try { res = await runHw1(device, argv, optsFor(device)); }
   catch (err) { return errorResult(String(err && err.message ? err.message : err)); }
 
-  if (allowFailover && isUnreachable(res)) {
+  // Fail over only when the master was never verified: the wrapper exits 7 solely from
+  // its pre-login probe, before anything is sent. A transport error after that (exit 1
+  // with "timed out reaching ..." or "could not reach ...") means the command may have
+  // reached the master and still be running there, so a CLI command is never re-run on
+  // the backup; the read-only --ping path may still fail over on that text.
+  const masterUnverified = res.exitCode === 7 || (!isCli && isUnreachable(res));
+  if (allowFailover && masterUnverified) {
     const bname = backupName(registry);
     if (bname && bname !== device.name) {
       try {
-        const r2 = await runHw1(registry.devices[bname], argv);
+        const r2 = await runHw1(registry.devices[bname], argv, optsFor(registry.devices[bname]));
         return formatResult(r2, { device: bname, failedOverFrom: device.name });
       } catch { /* fall through and report the original failure */ }
     }
@@ -392,7 +488,12 @@ async function runOnDevice(requestedDevice, argv) {
 function formatResult(res, meta = {}) {
   const body = res.stdout && res.stdout.length > 0 ? res.stdout : (res.stderr || "(no output)");
   const suffix = res.truncated ? "\n\n[output truncated]" : "";
-  const prefix = res.exitCode !== 0 ? `[exit ${res.exitCode}] ` : "";
+  // Exit 3 is passed through VERBATIM: the body already is the device's own diagnostic
+  // ("Unknown command …", "Usage: …", "Error: … access required") that the skill's error
+  // table keys on, so no "[exit N]" prefix. Other non-zero codes are wrapper-side
+  // (transport/config) failures and keep the prefix so they read as such.
+  const rejected = deviceRejected(res);
+  const prefix = res.exitCode !== 0 && !rejected ? `[exit ${res.exitCode}] ` : "";
   const fo = meta.failedOverFrom
     ? `[failed over ${meta.failedOverFrom} → ${meta.device}: master unreachable]\n`
     : "";
@@ -402,7 +503,9 @@ function formatResult(res, meta = {}) {
       device: meta.device,
       failedOverFrom: meta.failedOverFrom,
       exitCode: res.exitCode,
+      rejected: rejected || undefined,
       truncated: res.truncated,
+      timeoutMs: res.timeoutMs,
       stderr: res.stderr || undefined,
     },
   };
@@ -418,7 +521,7 @@ function validDeviceParam(device) {
 
 const DEVICE_PARAM = {
   type: "string",
-  description: "Optional device name (from hardwareone_devices). Omit to use the default device; when hardwareone_devices lists more than one direct device they are co-equal targets, so name the one you mean rather than relying on the default for an ambiguous request. A device shown with access:mesh is relayed through the master automatically — address it by name exactly like a direct device; the relay is async, so it can take a few seconds and reports cleanly if the peer is offline.",
+  description: `Optional device name (from hardwareone_devices). Omit to use the default device; when hardwareone_devices lists more than one direct device they are co-equal targets, so name the one you mean rather than relying on the default for an ambiguous request. A device shown with access:mesh is relayed through the master automatically — address it by name exactly like a direct device; the relay is async, so it can take a few seconds and reports cleanly if the peer is offline. A mesh device can be relayed only when it is securely paired with the relaying master (since firmware v0.99.9 the device executes only session-encrypted ESP-NOW command frames from paired peers); an unpaired peer is reported by the master, not reached. A relayed command must fit the master's ${MESH_RELAY_PAYLOAD_MAX}-byte relay payload together with the peer's credentials, so keep mesh commands under roughly 190 characters; the ${CMD_INPUT_MAX}-character limit is for direct devices.`,
 };
 
 // ── image / camera (binary fetch → image content block) ──────────────────────
@@ -553,11 +656,15 @@ export function createHardwareoneTools(api) {
         "case-insensitive and longest-prefix, so both one-word commands and documented dispatcher " +
         "subcommands are valid. Capabilities and permissions vary per device — use the skill catalog/help, " +
         "run 'features' with an admin-capable account on an unfamiliar device, and check " +
-        "hardwareone_devices for the operator's per-device description.",
+        "hardwareone_devices for the operator's per-device description. A command is at most " +
+        `${CMD_INPUT_MAX} characters (the firmware's input limit; longer input is rejected whole, not truncated); ` +
+        `a command relayed to an access:mesh device must fit the master's ${MESH_RELAY_PAYLOAD_MAX}-byte relay payload with the peer's credentials, so keep those under roughly 190 characters. ` +
+        "When the device rejects a command the result is the device's own diagnostic text (e.g. " +
+        "'Unknown command', 'Usage: …', 'Error: Admin access required') — read it, don't retry blindly.",
       parameters: {
         type: "object",
         properties: {
-          command: { type: "string", description: "Exact catalog/help command, e.g. 'status', 'features', or 'automation list'." },
+          command: { type: "string", description: `Exact catalog/help command, e.g. 'status', 'features', or 'automation list'. Printable ASCII only (0x20-0x7E: no control characters and no accented or other non-ASCII characters), at most ${CMD_INPUT_MAX} characters (roughly 190 for a mesh-relayed command).` },
           device: DEVICE_PARAM,
         },
         required: ["command"],
@@ -565,11 +672,11 @@ export function createHardwareoneTools(api) {
       async execute(_toolCallId, params) {
         const command = params && params.command;
         const device = params && params.device;
-        if (typeof command !== "string" || command.length === 0 || command.length > 512) {
-          return errorResult("command must be a non-empty string under 512 chars");
+        if (typeof command !== "string" || command.length === 0 || command.length > CMD_INPUT_MAX) {
+          return errorResult(`command must be a non-empty string of at most ${CMD_INPUT_MAX} characters (the firmware's CMD_INPUT_MAX; it rejects longer commands whole)`);
         }
         if (!SAFE_CLI_RE.test(command)) {
-          return errorResult("command must be printable text (no control characters)");
+          return errorResult("command must be printable text: ASCII 0x20-0x7E only (no control characters, no accented or other non-ASCII characters)");
         }
         if (!validDeviceParam(device)) return errorResult("device must be a short name (letters, digits, _ or -)");
         return runOnDevice(device, [command]);
@@ -580,7 +687,9 @@ export function createHardwareoneTools(api) {
       label: "HardwareOne Devices",
       description:
         "List the configured HardwareOne devices with name, role (master/worker/backup), access " +
-        "('direct' = reachable over HTTP, 'mesh' = relayed through the master automatically), and any " +
+        "('direct' = reachable over HTTP, 'mesh' = relayed through the master automatically, which works " +
+        "only when that device is securely paired with the relaying master — since firmware v0.99.9 only " +
+        "session-encrypted ESP-NOW command frames from paired peers are executed), and any " +
         "operator-written `description` of that device's hardware/software setup. Names, roles + " +
         "descriptions only — never addresses or credentials. Pass {\"probe\": true} to also report " +
         "which DIRECT devices are online. What each device IS also lives in your memory (search 'hardwareone').",
@@ -612,6 +721,10 @@ export function createHardwareoneTools(api) {
             if (d.access === "mesh") return d; // can't HTTP-ping a mesh-only device
             try {
               const res = await runHw1(registry.devices[d.name], ["--ping"]);
+              // exit 3 means the device answered and rejected the request — it is online,
+              // and its own text explains why (the wrapper's --ping path does not emit 3
+              // today, but the contract allows it, so never read it as "offline").
+              if (deviceRejected(res)) return { ...d, online: true, note: deviceText(res) || "device rejected the ping request" };
               return { ...d, online: res.exitCode === 0 };
             } catch {
               return { ...d, online: false };
@@ -660,8 +773,14 @@ export function createHardwareoneTools(api) {
         if (img.code === 501) return errorResult(`'${device.name}' has no camera (its firmware wasn't built with the camera feature).`);
         if (img.code === 503 && ensureOn) {
           // camera is off — start it (opencamera can block while the sensor powers up), then retry once.
-          try { await runHw1(device, ["opencamera"], { timeoutMs: CAMERA_WARMUP_MS }); }
+          let start;
+          try { start = await runHw1(device, ["opencamera"], { timeoutMs: CAMERA_WARMUP_MS }); }
           catch (err) { return errorResult(`could not start the camera on '${device.name}': ${String(err && err.message ? err.message : err)}`); }
+          // the device answered and refused (exit 3: camera disabled, sensor init failed, role) or
+          // the wrapper failed — report the device's own reason instead of a generic "not started".
+          if (start.exitCode !== 0) {
+            return errorResult(`could not start the camera on '${device.name}': ${deviceText(start) || "(no output)"}`);
+          }
           img = await runHw1Image(device, "/api/sensors/camera/frame");
           if (img.error) return errorResult(img.error);
         }
